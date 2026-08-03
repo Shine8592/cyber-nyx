@@ -1,0 +1,5 @@
+# Cyber Nyx dependencies
+# 骨架阶段暂无外部依赖；后续将添加：
+# fastapi
+# uvicorn
+# openai  (或直接走 Hermes MCP)
