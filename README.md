@@ -83,10 +83,11 @@ python nyx.py --persona default
 ## 🗺 Roadmap
 
 - [x] 项目启动
-- [ ] 人设配置文件规范（Persona JSON Schema）
-- [ ] Hermes Agent 适配层（MCP / 工具桥接）
-- [ ] 拟人 UI 基础版（Web 界面 + 立绘）
-- [ ] 情绪识别与表情联动
+- [x] 人设配置文件规范（Persona JSON Schema / personas/nyx.json）
+- [x] **Hermes Agent 适配层（AgentCore 接口 + Hermes CLI 桥接）**
+- [x] **记忆系统接入（universal-agent-memory MCP：召回/回写/跨会话）**
+- [x] 拟人 UI 基础版（Web 界面 + 星空夜景 + 情绪表情）
+- [ ] 情绪识别增强 + 表情联动
 - [ ] 语音交互（TTS/STT）
 - [ ] 桌面悬浮数字形象（Live2D）
 - [ ] 多平台发布（Win/macOS/Linux）
