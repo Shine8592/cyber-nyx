@@ -17,6 +17,7 @@
    - ✅ WebSocket 实时推送：/ws 端点 + CareWSManager + 后台 care 任务（30 秒检查），前端 WS 连接 + 断线回退轮询；修复主动关心重复触发（first_meet/idle_reminder/comfort 触发后视为互动）
 6. 测试新增 9 个（历史恢复 3 / 记忆 API 3 / WS 3），全量 142 passed
 7. 冒烟验证：真实环境 /api/memory 列表 + 删除闭环（remember→list→delete→gone）、WS 收到 first_meet 推送、无 session 被拒绝
+8. **提交推送 v0.7**：`adcd9af` feat: v0.7 历史恢复 + 记忆面板 + WS 实时关心（已推到 origin/main）
 
 测试结果
 --------
@@ -25,14 +26,13 @@ ruff lint: All checks passed
 
 当前状态
 --------
-- v0.7.0：历史恢复 / 记忆面板 / WS 实时关心 已实现并推送（待提交）
-- 工作区：app.py、memory_bridge.py、proactive.py、web/index.html、tests、README、今日更新 已改
+- v0.7.0：历史恢复 / 记忆面板 / WS 实时关心 已提交推送（adcd9af）
+- 工作区干净，main 分支与远程同步
 - 剩余计划项：TTS/STT（疯）、模式切换 UI、Live2D、移动端适配、鉴权、打包部署
 
 明日计划
 --------
-- 提交推送 v0.7（若今日未提交）
-- 跟进更新计划.md 剩余项
+- 跟进更新计划.md 剩余项（模式切换 UI 半小时可完成）
 
 ---
 可怕的食肉动物 留
