@@ -21,6 +21,7 @@ import nyx_llm
 from bridges.agent_core import NoCore
 from bridges.hermes_adapter import HermesCore
 from bridges.memory_bridge import MCPMemoryStore, NullMemoryStore
+from emotion import infer_emotion as _infer_emotion
 from nyx import NyxAgent
 from proactive import ProactiveCare
 from session import SessionManager
@@ -61,6 +62,7 @@ SYSTEM_PROMPT = (
     "说话温柔神秘，称呼对方为主人，句尾常用'呀/呢/~'。"
     "如果主人要求执行任务（查资料/写代码/改文件等），先简单确认，"
     "说明你会交给 Hermes 内核处理，再用你的语气回应。保持人设一致。"
+    + nyx.get_mode_prompt()
 )
 
 
@@ -83,6 +85,20 @@ def session_new():
     """新建一个会话，返回 session_id。"""
     session = sessions.get_or_create()
     return JSONResponse({"session_id": session.id})
+
+
+@app.get("/api/mode")
+def mode_get():
+    """查看当前模式。"""
+    return JSONResponse({"mode": nyx.mode})
+
+
+@app.post("/api/mode")
+def mode_set(body: dict):
+    """切换模式：{"mode": "companion" | "work"}"""
+    mode = (body or {}).get("mode", "")
+    msg = nyx.switch_mode(mode)
+    return JSONResponse({"mode": nyx.mode, "message": msg})
 
 
 @app.delete("/api/session/{session_id}")
@@ -160,9 +176,13 @@ def chat(body: ChatIn):
             mem_note = f"（我记得你之前提过:{recalled[0]['content'][:30]}…）"
         if LLM_ON:
             try:
+                care_prompt = nyx.get_proactive_prompt()
+                user_msg = mem_note + msg
+                if care_prompt:
+                    user_msg = f"{care_prompt}\n{user_msg}"
                 raw = nyx_llm.chat(
                     SYSTEM_PROMPT,
-                    mem_note + msg,
+                    user_msg,
                     history=session.context(max_turns=8),
                 )
             except Exception as e:
@@ -174,7 +194,8 @@ def chat(body: ChatIn):
             raw = nyx_llm.local_reply(msg) + mem_note
 
     reply = nyx.wrap(raw)
-    emotion = _infer_emotion(msg)
+    emotion, intensity = _infer_emotion(msg)
+    nyx.update_emotion(emotion)
 
     # 3) 记录会话：user 消息 + assistant 回复
     session.add("user", msg, emotion=emotion)
@@ -196,6 +217,7 @@ def chat(body: ChatIn):
             {
                 "reply": reply,
                 "emotion": emotion,
+                "intensity": intensity,
                 "recalled": len(recalled),
                 "format": "json",
                 "session_id": session.id,
@@ -205,6 +227,7 @@ def chat(body: ChatIn):
         {
             "reply": reply,
             "emotion": emotion,
+            "intensity": intensity,
             "recalled": len(recalled),
             "session_id": session.id,
         }
@@ -229,7 +252,7 @@ def chat_stream(body: ChatIn):
     async def generate():
         # 会话管理：获取或创建会话，记录 user 消息
         session = sessions.get_or_create(body.session_id)
-        emotion = _infer_emotion(msg)
+        emotion, intensity = _infer_emotion(msg)
         session.add("user", msg, emotion=emotion)
 
         recalled = []
@@ -273,15 +296,25 @@ def chat_stream(body: ChatIn):
             if LLM_ON:
                 try:
                     streamed = ""
+                    care_prompt = nyx.get_proactive_prompt()
+                    user_msg = mem_note + msg
+                    if care_prompt:
+                        user_msg = f"{care_prompt}\n{user_msg}"
                     for chunk in nyx_llm.chat_stream(
                         SYSTEM_PROMPT,
-                        mem_note + msg,
+                        user_msg,
                         history=session.context(max_turns=8),
                     ):
                         streamed += chunk
                         yield (
                             "data: "
-                            + json.dumps({"chunk": chunk, "emotion": emotion})
+                            + json.dumps(
+                                {
+                                    "chunk": chunk,
+                                    "emotion": emotion,
+                                    "intensity": intensity,
+                                }
+                            )
                             + "\n\n"
                         )
                     raw = streamed
@@ -293,11 +326,16 @@ def chat_stream(body: ChatIn):
             else:
                 raw = nyx_llm.local_reply(msg) + mem_note
                 yield (
-                    "data: " + json.dumps({"chunk": raw, "emotion": emotion}) + "\n\n"
+                    "data: "
+                    + json.dumps(
+                        {"chunk": raw, "emotion": emotion, "intensity": intensity}
+                    )
+                    + "\n\n"
                 )
 
         # 记录 assistant 回复 + 更新主动关心状态
         reply = nyx.wrap(raw)
+        nyx.update_emotion(emotion)
         session.add("assistant", reply)
         proactive.touch(session_id=session.id, emotion=emotion)
 
@@ -313,6 +351,7 @@ def chat_stream(body: ChatIn):
                 {
                     "reply": reply,
                     "emotion": emotion,
+                    "intensity": intensity,
                     "recalled": len(recalled),
                     "session_id": session.id,
                     "done": True,
@@ -345,18 +384,9 @@ def status():
         "core_health": core.health(),
         "memory": "universal-agent-memory" if MEM_ENABLED else "none",
         "persona": nyx.persona["name"],
+        "mode": nyx.mode,
         "version": "0.5.0",
     }
-
-
-def _infer_emotion(msg: str) -> str:
-    if any(k in msg for k in ["哈哈", "开心", "太好了", "😄", "❤"]):
-        return "happy"
-    if any(k in msg for k in ["难过", "伤心", "哭", "累", "😢", "烦"]):
-        return "sad"
-    if msg.endswith("?") or msg.endswith("？") or "吗" in msg or "呢" in msg:
-        return "curious"
-    return "neutral"
 
 
 def _looks_like_task(msg: str) -> bool:
@@ -390,7 +420,7 @@ if __name__ == "__main__":
     import uvicorn
 
     print(
-        "🌙 Cyber Nyx v0.4 · "
+        "🌙 Cyber Nyx v0.5 · "
         f"llm={'在线' if LLM_ON else '本地演示'} · "
         f"core={core.name} · "
         f"memory={'universal-agent-memory' if MEM_ENABLED else 'none'}"

@@ -126,11 +126,22 @@ class TestEmotionInference:
         resp = client.post("/api/chat", json={"message": "哈哈开心"})
         data = resp.json()
         assert data["emotion"] == "happy"
+        assert "intensity" in data
 
     def test_sad_emotion(self):
         resp = client.post("/api/chat", json={"message": "难过伤心"})
         data = resp.json()
         assert data["emotion"] == "sad"
+
+    def test_angry_emotion(self):
+        resp = client.post("/api/chat", json={"message": "你真讨厌"})
+        data = resp.json()
+        assert data["emotion"] == "angry"
+
+    def test_surprised_emotion(self):
+        resp = client.post("/api/chat", json={"message": "天哪不是吧"})
+        data = resp.json()
+        assert data["emotion"] == "surprised"
 
     def test_curious_emotion(self):
         resp = client.post("/api/chat", json={"message": "你在做什么吗？"})
@@ -141,6 +152,26 @@ class TestEmotionInference:
         resp = client.post("/api/chat", json={"message": "今天天气不错"})
         data = resp.json()
         assert data["emotion"] == "neutral"
+        assert data["intensity"] == 0.0
+
+
+class TestMode:
+    def test_mode_get_default(self):
+        resp = client.get("/api/mode")
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == "companion"
+
+    def test_mode_switch_work(self):
+        resp = client.post("/api/mode", json={"mode": "work"})
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == "work"
+        resp = client.post("/api/mode", json={"mode": "companion"})
+        assert resp.json()["mode"] == "companion"
+
+    def test_mode_invalid(self):
+        resp = client.post("/api/mode", json={"mode": "sleep"})
+        assert resp.json()["mode"] == "companion"
+        assert "不存在" in resp.json()["message"]
 
 
 class TestImportantMemory:

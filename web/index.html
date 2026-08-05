@@ -42,6 +42,9 @@
   .avatar.happy { transform: scale(1.05) rotate(2deg); }
   .avatar.sad { filter: saturate(.6) brightness(.85); }
   .avatar.curious { transform: rotate(-4deg) scale(1.03); }
+  .avatar.angry { transform: scale(.98) rotate(-3deg); filter: hue-rotate(-20deg) saturate(1.3); }
+  .avatar.surprised { transform: scale(1.1); animation: none; }
+  .avatar.shy { transform: translateY(4px) scale(.98); filter: brightness(1.08); }
 
   .chat { flex:1; overflow-y:auto; padding:6px 4px 12px; display:flex; flex-direction:column; gap:10px; }
   .bubble { max-width:76%; padding:11px 15px; border-radius:16px; font-size:15px; line-height:1.55; animation: rise .25s ease; }
