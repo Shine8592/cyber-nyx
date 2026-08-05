@@ -2,14 +2,25 @@
 """Nyx LLM 适配器 — OpenAI 兼容 API 接入（可配置端点/密钥/模型）。
 
 若未配置任何 API，则退回"本地小夜"规则回复（演示模式，零外部依赖）。
+支持自动重试（指数退避）和 SSE 流式输出。
+
 环境变量：
     NYX_API_BASE    e.g. https://api.openai.com/v1
     NYX_API_KEY     e.g. sk-xxx
     NYX_MODEL       e.g. gpt-4o-mini / deepseek-chat
+    NYX_RETRY_MAX   重试次数 (默认 3)
+    NYX_RETRY_BASE  重试基础秒数 (默认 1.0)
+    NYX_STREAM      设为 "1" 启用 SSE 流式输出
 """
-import os
-import urllib.request
 import json
+import os
+import time
+import urllib.request
+from typing import Generator, Optional
+
+MAX_RETRIES = int(os.environ.get("NYX_RETRY_MAX", "3"))
+RETRY_BASE = float(os.environ.get("NYX_RETRY_BASE", "1.0"))
+STREAM_ENABLED = os.environ.get("NYX_STREAM", "0") == "1"
 
 
 def _resolve_cfg():
@@ -25,18 +36,11 @@ def available() -> bool:
     return bool(cfg["base"] and cfg["key"])
 
 
-def chat(system_prompt: str, user_message: str, temperature: float = 0.8) -> str:
-    """调用 OpenAI 兼容 chat/completions。失败抛异常由上层兜底。"""
+def _request(payload: dict, stream: bool = False) -> urllib.request.urlopen:
+    """发送请求，返回响应对象。供 chat 和 stream 共享。"""
     cfg = _resolve_cfg()
     url = f"{cfg['base']}/chat/completions"
-    payload = {
-        "model": cfg["model"],
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        "temperature": temperature,
-    }
+    payload["stream"] = stream
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -45,9 +49,63 @@ def chat(system_prompt: str, user_message: str, temperature: float = 0.8) -> str
             "Authorization": f"Bearer {cfg['key']}",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    return data["choices"][0]["message"]["content"].strip()
+    return urllib.request.urlopen(req, timeout=60)
+
+
+def chat(system_prompt: str, user_message: str, temperature: float = 0.8) -> str:
+    """调用 OpenAI 兼容 chat/completions。失败自动重试，最终抛异常由上层兜底。"""
+    payload = {
+        "model": _resolve_cfg()["model"],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "temperature": temperature,
+    }
+    last_err = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = _request(payload)
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            last_err = e
+            if attempt < MAX_RETRIES:
+                wait = RETRY_BASE * (2 ** (attempt - 1))
+                time.sleep(wait)
+    raise last_err
+
+
+def chat_stream(system_prompt: str, user_message: str, temperature: float = 0.8) -> Generator[str, None, None]:
+    """SSE 流式输出，逐块 yield 文本片段。失败自动重试。"""
+    payload = {
+        "model": _resolve_cfg()["model"],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "temperature": temperature,
+        "stream": True,
+    }
+    last_err = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = _request(payload, stream=True)
+            for line in resp:
+                line = line.decode("utf-8").strip()
+                if not line.startswith("data: ") or line == "data: [DONE]":
+                    continue
+                chunk = json.loads(line[6:])
+                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                if delta:
+                    yield delta
+            return
+        except Exception as e:
+            last_err = e
+            if attempt < MAX_RETRIES:
+                wait = RETRY_BASE * (2 ** (attempt - 1))
+                time.sleep(wait)
+    raise last_err
 
 
 # ---- 演示模式：无 API 时的本地小夜 ----

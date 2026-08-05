@@ -8,6 +8,7 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+[![v0.3](https://img.shields.io/badge/version-0.3-blue.svg)]()
 
 ---
 
@@ -49,6 +50,11 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 - 主动陪伴：定时问候、纪念日提醒、情绪安抚
 - 会话快照：随时恢复上次聊天状态
 
+### 5️⃣ LLM 增强（v0.3）
+- **自动重试**：指数退避，最多 3 次（`NYX_RETRY_MAX` / `NYX_RETRY_BASE`）
+- **SSE 流式输出**：逐字推送，感知更自然（`NYX_STREAM=1`）
+- **多格式兼容**：支持 `text`（默认）、`json`、`sse` 三种响应格式
+
 ---
 
 ## 🛠 架构
@@ -67,22 +73,67 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 
 ---
 
-## 📦 快速开始（规划中）
+## 📦 快速开始
 
 ```bash
 git clone https://github.com/Shine8592/cyber-nyx.git
 cd cyber-nyx
 pip install -r requirements.txt
-python nyx.py --persona default
+python app.py
 ```
 
-> 完整安装文档将在首个 Release 提供。
+访问 http://127.0.0.1:8000
+
+### 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `NYX_API_BASE` | OpenAI 兼容 API 地址 | - |
+| `NYX_API_KEY` | API 密钥 | - |
+| `NYX_MODEL` | 模型名称 | gpt-4o-mini |
+| `NYX_HERMES_BIN` | Hermes CLI 路径 | 自动探测 |
+| `NYX_HERMES_MODEL` | Hermes 模型 | - |
+| `NYX_STREAM` | 启用 SSE 流式 | 0 |
+| `NYX_RETRY_MAX` | LLM 重试次数 | 3 |
+| `NYX_RETRY_BASE` | 重试基础秒数 | 1.0 |
+
+---
+
+## 🔌 API
+
+### 文本模式（默认）
+```
+POST /api/chat
+Body: { "message": "你好", "format": "text" }
+Response: { "reply": "...", "emotion": "neutral", "recalled": 0 }
+```
+
+### JSON 模式
+```
+POST /api/chat
+Body: { "message": "你好", "format": "json" }
+Response: { "reply": "...", "emotion": "neutral", "recalled": 0, "format": "json" }
+```
+
+### SSE 流式模式
+```
+POST /api/chat/stream
+Body: { "message": "你好", "format": "sse" }
+Response: text/event-stream
+```
+
+### 状态
+```
+GET /api/status
+```
 
 ---
 
 ## 🗺 Roadmap
 
 - [x] 项目启动
+- [x] LLM 重试 + 流式输出
+- [x] 多格式 API 兼容（text/json/sse）
 - [ ] 人设配置文件规范（Persona JSON Schema）
 - [ ] Hermes Agent 适配层（MCP / 工具桥接）
 - [ ] 拟人 UI 基础版（Web 界面 + 立绘）

@@ -61,6 +61,11 @@
     color:#1a1408; font-weight:700; padding:0 24px; font-size:15px; cursor:pointer; transition: opacity .2s;
   }
   .input-bar button:hover { opacity:.85; }
+  .input-bar select {
+    background:var(--card); border:1px solid rgba(255,255,255,.12); border-radius:12px;
+    padding:13px 10px; color:var(--text); font-size:14px; outline:none; cursor:pointer;
+  }
+  .input-bar select option { background:#151a3a; color:var(--text); }
   .foot { text-align:center; color:var(--dim); font-size:11px; padding-bottom:10px; }
 </style>
 </head>
@@ -87,9 +92,14 @@
 
   <div class="input-bar">
     <input id="msg" placeholder="跟小夜说点什么…（也可以让它帮你做事）" autocomplete="off">
+    <select id="fmt">
+      <option value="text">文本</option>
+      <option value="json">JSON</option>
+      <option value="sse">流式</option>
+    </select>
     <button id="send">发送</button>
   </div>
-  <div class="foot">Cyber Nyx v0.2 · Powered by Hermes Agent + universal-agent-memory</div>
+  <div class="foot">Cyber Nyx v0.3 · Powered by Hermes Agent + universal-agent-memory</div>
 </div>
 
 <script>
@@ -136,15 +146,49 @@
     const typing = document.createElement('div');
     typing.className = 'typing'; typing.textContent = '小夜正在思索…';
     chat.appendChild(typing); chat.scrollTop = chat.scrollHeight;
+
+    const fmt = document.getElementById('fmt').value;
+    const url = fmt === 'sse' ? '/api/chat/stream' : '/api/chat';
+    const opts = {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message: msg, format: fmt}),
+    };
+
     try {
-      const r = await fetch('/api/chat', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({message: msg})
-      });
-      const d = await r.json();
-      typing.remove();
-      setEmotion(d.emotion);
-      setTimeout(() => addBubble(d.reply, 'nyx'), 250);
+      if (fmt === 'sse') {
+        const resp = await fetch(url, opts);
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let fullReply = '';
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('data: ')) {
+              const d = JSON.parse(line.slice(6));
+              if (d.chunk) {
+                fullReply += d.chunk;
+                typing.textContent = fullReply + '…';
+              }
+              if (d.done) {
+                typing.remove();
+                setEmotion(d.emotion);
+                setTimeout(() => addBubble(d.reply || fullReply, 'nyx'), 250);
+                return;
+              }
+            }
+          }
+        }
+        typing.remove();
+        addBubble(fullReply || '嗯？主人没有说话呢~', 'nyx');
+      } else {
+        const r = await fetch(url, opts);
+        const d = await r.json();
+        typing.remove();
+        setEmotion(d.emotion);
+        setTimeout(() => addBubble(d.reply, 'nyx'), 250);
+      }
     } catch(e) {
       typing.remove();
       addBubble('唔，网络有些不乖呢，主人稍后再试好不好~', 'nyx');
