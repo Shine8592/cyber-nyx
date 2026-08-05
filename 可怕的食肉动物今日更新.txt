@@ -1,0 +1,47 @@
+﻿可怕的食肉动物今日更新
+========================
+日期：2026年8月5日
+分支：feat/v0.3-llm-retry-streaming-format
+
+---
+
+今日完成
+--------
+1. 克隆 cyber-nyx 仓库到本地环境
+2. 分析 v0.2 存在的问题：
+   - subprocess 每次请求都起子进程，开销大
+   - PLACEHOLDER 死代码残留
+   - LLM 调用无重试机制
+   - import 路径依赖 sys.path 硬编码
+3. 创建 v0.3 分支，修复四个核心问题：
+   - memory_bridge.py：长连接复用，避免反复创建连接
+   - hermes_adapter.py：删除 PLACEHOLDER 死代码
+   - nyx_llm.py：指数退避重试（最多3次，1s/2s/4s）+ SSE 流式输出
+   - app.py：多格式 API（text/json/sse），流式端点 /api/chat/stream
+4. 添加 32 个单元测试 + 集成测试，全部通过
+5. 安装 ruff，格式化全部 9 个文件，修复所有 lint 错误
+6. 推送到 GitHub 远程仓库
+
+测试结果
+--------
+32 passed in 7.43s
+
+ruff lint
+---------
+All checks passed
+
+当前状态
+--------
+- 代码已推送，分支与远程同步
+- 工作区干净，无未提交更改
+- 可以提 PR 合并到 main
+
+明日计划
+--------
+- 合并 PR 到 main
+- 考虑添加 CI（GitHub Actions）
+- 评估是否需要 WebSocket 长连接替代 SSE
+- 补充 API 文档（OpenAPI schema）
+
+---
+可怕的食肉动物 留
