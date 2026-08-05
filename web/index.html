@@ -49,6 +49,17 @@
   .nyx { align-self:flex-start; background:var(--card); border:1px solid rgba(201,163,92,.22); border-bottom-left-radius:4px; }
   .me { align-self:flex-end; background:linear-gradient(135deg,#2a2f66,#3b3277); border:1px solid rgba(124,111,240,.35); border-bottom-right-radius:4px; }
   .typing { color:var(--dim); font-size:14px; align-self:flex-start; padding:6px 4px; }
+  .typing-cursor {
+    display:inline-block; width:2px; height:1em; background:var(--gold);
+    margin-left:2px; vertical-align:-2px; animation: blink .8s infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  .new-chat {
+    background:transparent; border:1px solid rgba(255,255,255,.14); color:var(--dim);
+    border-radius:10px; padding:7px 12px; font-size:12px; cursor:pointer; transition: all .2s;
+  }
+  .new-chat:hover { color:var(--text); border-color:var(--gold); background:rgba(201,163,92,.1); }
 
   .input-bar { display:flex; gap:10px; padding:14px 0 20px; }
   .input-bar input {
@@ -80,6 +91,7 @@
       <p>夜之女神 · 赛博助手 · Hermes 内核</p>
     </div>
     <div class="status"><span class="dot"></span><span id="mode">连接中</span></div>
+    <button class="new-chat" id="newChat" title="开启新对话">新对话</button>
   </header>
 
   <div class="avatar-zone">
@@ -99,7 +111,7 @@
     </select>
     <button id="send">发送</button>
   </div>
-  <div class="foot">Cyber Nyx v0.4 · Powered by Hermes Agent + universal-agent-memory</div>
+  <div class="foot">Cyber Nyx v0.5 · Powered by Hermes Agent + universal-agent-memory</div>
 </div>
 
 <script>
@@ -125,10 +137,46 @@
     else modeEl.textContent = '本地演示';
   }).catch(()=>{});
 
-  // --- 主动关心轮询 ---
-  async function checkProactiveCare() {
+  // --- 会话管理：localStorage 持久化 session_id ---
+  const SESSION_KEY = 'cyber_nyx_session_id';
+  let sessionId = localStorage.getItem(SESSION_KEY) || '';
+
+  async function ensureSession() {
+    // 没有 session_id 时向服务端申请一个
+    if (sessionId) return sessionId;
     try {
-      const resp = await fetch('/api/care?session_id=default');
+      const resp = await fetch('/api/session/new');
+      const d = await resp.json();
+      sessionId = d.session_id;
+      localStorage.setItem(SESSION_KEY, sessionId);
+    } catch (e) {
+      sessionId = 'default';
+    }
+    return sessionId;
+  }
+
+  async function resetSession() {
+    // 新对话：删除旧会话，重新申请 session_id
+    if (sessionId) {
+      try { await fetch('/api/session/' + sessionId, { method: 'DELETE' }); } catch (e) {}
+    }
+    sessionId = '';
+    localStorage.removeItem(SESSION_KEY);
+    chat.innerHTML = '';
+    addBubble('主人，我们重新开始吧~ 今晚想聊些什么呢？', 'nyx');
+    await ensureSession();
+  }
+
+  document.getElementById('newChat').onclick = () => {
+    if (chat.querySelectorAll('.bubble').length > 1 && !confirm('开启新对话会清空当前聊天记录，确定吗？')) return;
+    resetSession();
+  };
+
+  // --- 主动关心轮询（使用当前 session_id） ---
+  async function checkProactiveCare() {
+    if (!sessionId) await ensureSession();
+    try {
+      const resp = await fetch('/api/care?session_id=' + encodeURIComponent(sessionId));
       const data = await resp.json();
       if (data.care && data.message) {
         addBubble(data.message, 'nyx');
@@ -147,6 +195,36 @@
     b.textContent = text;
     chat.appendChild(b);
     chat.scrollTop = chat.scrollHeight;
+    return b;
+  }
+
+  // --- 打字机效果：逐字显示 Nyx 回复 ---
+  const TYPE_SPEED = 28; // 每字符间隔 ms
+
+  function typeBubble(text, who, done) {
+    const b = document.createElement('div');
+    b.className = 'bubble ' + who;
+    const cursor = document.createElement('span');
+    cursor.className = 'typing-cursor';
+    b.appendChild(cursor);
+    chat.appendChild(b);
+
+    let i = 0;
+    function step() {
+      if (i < text.length) {
+        // 成块插入（中文按 1-3 字符，避免逐字闪烁过快）
+        const n = /[\x00-\x7f]/.test(text[i]) ? 1 : 2;
+        b.insertBefore(document.createTextNode(text.slice(i, i + n)), cursor);
+        i += n;
+        chat.scrollTop = chat.scrollHeight;
+        setTimeout(step, TYPE_SPEED);
+      } else {
+        cursor.remove();
+        if (done) done(b);
+      }
+    }
+    step();
+    return b;
   }
 
   function setEmotion(e) {
@@ -159,6 +237,7 @@
     if (!msg) return;
     addBubble(msg, 'me');
     input.value = '';
+    await ensureSession();
     const typing = document.createElement('div');
     typing.className = 'typing'; typing.textContent = '小夜正在思索…';
     chat.appendChild(typing); chat.scrollTop = chat.scrollHeight;
@@ -167,7 +246,7 @@
     const url = fmt === 'sse' ? '/api/chat/stream' : '/api/chat';
     const opts = {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({message: msg, format: fmt}),
+      body: JSON.stringify({message: msg, format: fmt, session_id: sessionId}),
     };
 
     try {
@@ -176,6 +255,7 @@
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let fullReply = '';
+        let finished = false;
         while (true) {
           const {done, value} = await reader.read();
           if (done) break;
@@ -186,24 +266,37 @@
               if (d.chunk) {
                 fullReply += d.chunk;
                 typing.textContent = fullReply + '…';
+                chat.scrollTop = chat.scrollHeight;
               }
               if (d.done) {
+                finished = true;
+                if (d.session_id) {
+                  sessionId = d.session_id;
+                  localStorage.setItem(SESSION_KEY, sessionId);
+                }
                 typing.remove();
                 setEmotion(d.emotion);
-                setTimeout(() => addBubble(d.reply || fullReply, 'nyx'), 250);
+                // 收到完整回复后用打字机效果展示
+                setTimeout(() => typeBubble(d.reply || fullReply, 'nyx'), 250);
                 return;
               }
             }
           }
         }
-        typing.remove();
-        addBubble(fullReply || '嗯？主人没有说话呢~', 'nyx');
+        if (!finished) {
+          typing.remove();
+          typeBubble(fullReply || '嗯？主人没有说话呢~', 'nyx');
+        }
       } else {
         const r = await fetch(url, opts);
         const d = await r.json();
+        if (d.session_id) {
+          sessionId = d.session_id;
+          localStorage.setItem(SESSION_KEY, sessionId);
+        }
         typing.remove();
         setEmotion(d.emotion);
-        setTimeout(() => addBubble(d.reply, 'nyx'), 250);
+        setTimeout(() => typeBubble(d.reply, 'nyx'), 250);
       }
     } catch(e) {
       typing.remove();
