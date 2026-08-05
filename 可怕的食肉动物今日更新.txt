@@ -1,47 +1,46 @@
 ﻿可怕的食肉动物今日更新
 ========================
 日期：2026年8月5日
-分支：feat/v0.3-llm-retry-streaming-format
+分支：main（v0.6.0）
 
 ---
 
 今日完成
 --------
-1. 克隆 cyber-nyx 仓库到本地环境
-2. 分析 v0.2 存在的问题：
-   - subprocess 每次请求都起子进程，开销大
-   - PLACEHOLDER 死代码残留
-   - LLM 调用无重试机制
-   - import 路径依赖 sys.path 硬编码
-3. 创建 v0.3 分支，修复四个核心问题：
-   - memory_bridge.py：长连接复用，避免反复创建连接
-   - hermes_adapter.py：删除 PLACEHOLDER 死代码
-   - nyx_llm.py：指数退避重试（最多3次，1s/2s/4s）+ SSE 流式输出
-   - app.py：多格式 API（text/json/sse），流式端点 /api/chat/stream
-4. 添加 32 个单元测试 + 集成测试，全部通过
-5. 安装 ruff，格式化全部 9 个文件，修复所有 lint 错误
-6. 推送到 GitHub 远程仓库
+1. 通读全部文档（README.md / COLLABORATION.md / docs/v0.4-plan.md）
+2. 对照 v0.4 功能规划逐项核对代码实现，确认 8 项功能状态：
+   - ✅ 多会话上下文管理（session.py，d70e13a）
+   - ✅ 前端打字机效果（index.html typeBubble + SSE，e927cc8）
+   - ✅ 情绪识别增强（双层架构：关键词快筛 + LLM 精判，9914cb2）
+   - ✅ NyxAgent 增强（情绪状态机 / 模式切换 / 共情映射，9914cb2）
+   - ✅ 会话历史持久化（universal-agent-memory 快照，3edf655）
+   - ✅ 主动关心（proactive.py + /api/care + 前端轮询，7b9788c）
+   - ⏳ TTS 语音合成（待做）
+   - ⏳ STT 语音识别（待做）
+3. 代码审查（bridges / app.py / web/index.html / personas/nyx.json）：
+   - 后端端点齐全：chat / chat/stream / care / mode / session(new/delete/history) / status
+   - 前端齐全：新对话按钮、session 管理、care 轮询（3秒首查+5分钟）、打字机、情绪联动
+   - 发现一个文档落差：前端刷新后聊天 UI 不恢复历史（README"跨重启恢复"实际是记忆层恢复，非 UI 层）
+4. 全量回归测试：133 passed（41.63s）
+5. 删除 docs/v0.4-plan.md（v0.4 功能规划文档，8 项中 6 项已完成、剩余 2 项转入 Roadmap 跟进）
 
 测试结果
 --------
-32 passed in 7.43s
-
-ruff lint
----------
-All checks passed
+133 passed in 41.63s
 
 当前状态
 --------
-- 代码已推送，分支与远程同步
-- 工作区干净，无未提交更改
-- 可以提 PR 合并到 main
+- v0.4 规划 8 项功能：已完成 6 项，剩余 2 项（TTS / STT）
+- v0.4 规划文档已删除，待办以 README Roadmap 为准
+- 工作区：docs/v0.4-plan.md 已删除 + 本文件已更新，未提交
+- 唯一落差：前端无 DOMContentLoaded 历史恢复逻辑（已记入审计结论）
 
 明日计划
 --------
-- 合并 PR 到 main
-- 考虑添加 CI（GitHub Actions）
-- 评估是否需要 WebSocket 长连接替代 SSE
-- 补充 API 文档（OpenAPI schema）
+- 实现 TTS 语音合成（nyx_voice.py + /api/tts + 前端 🔊 播放按钮）
+- 实现 STT 语音识别（前端 Web Speech API + 🎤 按钮）
+- 可选：补前端刷新恢复聊天历史，消除文档落差
+- 开 feat/v0.4-tts 分支，完成后 PR 合并
 
 ---
 可怕的食肉动物 留
