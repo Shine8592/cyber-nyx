@@ -24,16 +24,6 @@ class HermesCore(AgentCore):
         self.model = model or os.environ.get("NYX_HERMES_MODEL", "")
         self.provider = provider or os.environ.get("NYX_HERMES_PROVIDER", "")
 
-    def _cmd(self, timeout: int):
-        cmd = [self.bin, "-z", "PLACEHOLDER", "-p", "PLACEHOLDER"]
-        # 附加模型/提供方（若配置）
-        extra = []
-        if self.model:
-            extra += ["-m", self.model]
-        if self.provider:
-            extra += ["--provider", self.provider]
-        return extra
-
     def task_style(self) -> str:
         return (
             "主人会给出自然语言请求。请把它表述成一个 Hermes 能执行的、"
