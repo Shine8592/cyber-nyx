@@ -54,14 +54,24 @@ def _request(payload: dict, stream: bool = False) -> urllib.request.urlopen:
     return urllib.request.urlopen(req, timeout=60)
 
 
-def chat(system_prompt: str, user_message: str, temperature: float = 0.8) -> str:
-    """调用 OpenAI 兼容 chat/completions。失败自动重试，最终抛异常由上层兜底。"""
+def chat(
+    system_prompt: str,
+    user_message: str,
+    temperature: float = 0.8,
+    history: list[dict] | None = None,
+) -> str:
+    """调用 OpenAI 兼容 chat/completions。失败自动重试，最终抛异常由上层兜底。
+
+    history 参数：可传入多轮上下文列表 [{"role": ..., "content": ...}, ...]，
+    放在 system 与当前 user 消息之间。
+    """
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history[-20:])  # 最多携带 20 条历史
+    messages.append({"role": "user", "content": user_message})
     payload = {
         "model": _resolve_cfg()["model"],
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
+        "messages": messages,
         "temperature": temperature,
     }
     last_err = None
@@ -79,15 +89,19 @@ def chat(system_prompt: str, user_message: str, temperature: float = 0.8) -> str
 
 
 def chat_stream(
-    system_prompt: str, user_message: str, temperature: float = 0.8
+    system_prompt: str,
+    user_message: str,
+    temperature: float = 0.8,
+    history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
     """SSE 流式输出，逐块 yield 文本片段。失败自动重试。"""
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history[-20:])
+    messages.append({"role": "user", "content": user_message})
     payload = {
         "model": _resolve_cfg()["model"],
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
+        "messages": messages,
         "temperature": temperature,
         "stream": True,
     }

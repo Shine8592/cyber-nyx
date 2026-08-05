@@ -35,7 +35,7 @@ class TestStatus:
         assert "name" in data
         assert "display" in data
         assert "version" in data
-        assert data["version"] == "0.4.0"
+        assert data["version"] == "0.5.0"
 
     def test_status_llm_field(self):
         resp = client.get("/api/status")
@@ -166,3 +166,72 @@ class TestErrorHandling:
                 or "error" in data["reply"].lower()
                 or len(data["reply"]) > 0
             )
+
+
+class TestSessions:
+    def test_chat_returns_session_id(self):
+        resp = client.post("/api/chat", json={"message": "你好"})
+        data = resp.json()
+        assert "session_id" in data
+        assert data["session_id"]
+
+    def test_session_new_endpoint(self):
+        resp = client.get("/api/session/new")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "session_id" in data
+        assert data["session_id"]
+
+    def test_session_reuse_same_id(self):
+        resp1 = client.post("/api/chat", json={"message": "第一次说话"})
+        sid = resp1.json()["session_id"]
+        resp2 = client.post(
+            "/api/chat",
+            json={"message": "第二次说话", "session_id": sid},
+        )
+        assert resp2.json()["session_id"] == sid
+
+    def test_session_history_records_messages(self):
+        resp = client.post("/api/chat", json={"message": "记录我这句话"})
+        sid = resp.json()["session_id"]
+        resp = client.get(f"/api/session/{sid}/history")
+        assert resp.status_code == 200
+        msgs = resp.json()["messages"]
+        assert len(msgs) == 2  # user + assistant
+        assert msgs[0]["role"] == "user"
+        assert msgs[0]["content"] == "记录我这句话"
+        assert msgs[1]["role"] == "assistant"
+
+    def test_session_history_empty_for_unknown(self):
+        resp = client.get("/api/session/nonexistent/history")
+        assert resp.status_code == 200
+        assert resp.json()["messages"] == []
+
+    def test_session_delete(self):
+        resp = client.get("/api/session/new")
+        sid = resp.json()["session_id"]
+        resp = client.delete(f"/api/session/{sid}")
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        resp = client.get(f"/api/session/{sid}/history")
+        assert resp.json()["messages"] == []
+
+    def test_llm_receives_history(self):
+        with patch("app.LLM_ON", True), patch("nyx_llm.chat") as mock_chat:
+            mock_chat.return_value = "收到~"
+            resp = client.post("/api/chat", json={"message": "第一句"})
+            sid = resp.json()["session_id"]
+            resp = client.post(
+                "/api/chat", json={"message": "第二句", "session_id": sid}
+            )
+            assert resp.status_code == 200
+            # history 参数应该被传入（第一条 user 消息在其中）
+            hist = mock_chat.call_args.kwargs.get("history", [])
+            assert any(m["content"] == "第一句" for m in hist)
+
+    def test_stream_endpoint_returns_session_id(self):
+        resp = client.post(
+            "/api/chat/stream", json={"message": "你好", "format": "sse"}
+        )
+        assert resp.status_code == 200
+        assert "session_id" in resp.text

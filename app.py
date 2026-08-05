@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
-"""Cyber Nyx — FastAPI 拟人助手服务（v0.4：主动关心）
+"""Cyber Nyx — FastAPI 拟人助手服务（v0.5：多会话上下文管理）
 
 启动：
     python app.py                                  # 演示模式
@@ -23,9 +23,10 @@ from bridges.hermes_adapter import HermesCore
 from bridges.memory_bridge import MCPMemoryStore, NullMemoryStore
 from nyx import NyxAgent
 from proactive import ProactiveCare
+from session import SessionManager
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="Cyber Nyx", version="0.4.0")
+app = FastAPI(title="Cyber Nyx", version="0.5.0")
 
 nyx = NyxAgent(str(BASE / "personas" / "nyx.json"))
 LLM_ON = nyx_llm.available()
@@ -51,6 +52,9 @@ except Exception:
 # --- 主动关心 ---
 proactive = ProactiveCare(nyx_agent=nyx, memory_store=memory if MEM_ENABLED else None)
 
+# --- 多会话上下文管理 ---
+sessions = SessionManager(max_sessions=200, ttl=3600)
+
 SYSTEM_PROMPT = (
     f"你叫{nyx.display}（{nyx.title}），现在是深夜陪伴时刻。"
     f"你的人设：{'、'.join(nyx.persona.get('personality', []))}。"
@@ -63,6 +67,7 @@ SYSTEM_PROMPT = (
 class ChatIn(BaseModel):
     message: str
     format: str | None = "text"  # text | json | sse
+    session_id: str | None = None  # 复用已有会话；不传则新建
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -70,11 +75,49 @@ def index():
     return (BASE / "web" / "index.html").read_text(encoding="utf-8")
 
 
+# --- 会话管理端点 ---
+
+
+@app.get("/api/session/new")
+def session_new():
+    """新建一个会话，返回 session_id。"""
+    session = sessions.get_or_create()
+    return JSONResponse({"session_id": session.id})
+
+
+@app.delete("/api/session/{session_id}")
+def session_delete(session_id: str):
+    """删除一个会话（前端"新对话"按钮使用）。"""
+    sessions.delete(session_id)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/session/{session_id}/history")
+def session_history(session_id: str):
+    """返回会话历史（供前端恢复上下文 / 调试）。"""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse({"messages": []})
+    msgs = [
+        {
+            "role": m.role,
+            "content": m.content,
+            "emotion": m.emotion,
+            "timestamp": m.timestamp,
+        }
+        for m in session.messages
+    ]
+    return JSONResponse({"session_id": session_id, "messages": msgs})
+
+
 @app.post("/api/chat")
 def chat(body: ChatIn):
     msg = body.message.strip()
     if not msg:
         return JSONResponse({"reply": "嗯？主人没有说话呢~", "emotion": "neutral"})
+
+    # 0) 会话管理：获取或创建会话
+    session = sessions.get_or_create(body.session_id)
 
     # 1) 记忆召回
     recalled = []
@@ -117,7 +160,11 @@ def chat(body: ChatIn):
             mem_note = f"（我记得你之前提过:{recalled[0]['content'][:30]}…）"
         if LLM_ON:
             try:
-                raw = nyx_llm.chat(SYSTEM_PROMPT, mem_note + msg)
+                raw = nyx_llm.chat(
+                    SYSTEM_PROMPT,
+                    mem_note + msg,
+                    history=session.context(max_turns=8),
+                )
             except Exception as e:
                 raw = (
                     "唔，我这边网络打了个盹呢"
@@ -129,10 +176,14 @@ def chat(body: ChatIn):
     reply = nyx.wrap(raw)
     emotion = _infer_emotion(msg)
 
-    # 3) 更新主动关心状态
-    proactive.touch(session_id="default", emotion=emotion)
+    # 3) 记录会话：user 消息 + assistant 回复
+    session.add("user", msg, emotion=emotion)
+    session.add("assistant", reply)
 
-    # 4) 记忆保存
+    # 4) 更新主动关心状态
+    proactive.touch(session_id=session.id, emotion=emotion)
+
+    # 5) 记忆保存
     if _looks_important(msg) and MEM_ENABLED:
         try:
             memory.remember(f"主人说：{msg}", "from-chat")
@@ -147,9 +198,17 @@ def chat(body: ChatIn):
                 "emotion": emotion,
                 "recalled": len(recalled),
                 "format": "json",
+                "session_id": session.id,
             }
         )
-    return JSONResponse({"reply": reply, "emotion": emotion, "recalled": len(recalled)})
+    return JSONResponse(
+        {
+            "reply": reply,
+            "emotion": emotion,
+            "recalled": len(recalled),
+            "session_id": session.id,
+        }
+    )
 
 
 @app.post("/api/chat/stream")
@@ -168,6 +227,11 @@ def chat_stream(body: ChatIn):
         return StreamingResponse(empty(), media_type="text/event-stream")
 
     async def generate():
+        # 会话管理：获取或创建会话，记录 user 消息
+        session = sessions.get_or_create(body.session_id)
+        emotion = _infer_emotion(msg)
+        session.add("user", msg, emotion=emotion)
+
         recalled = []
         if MEM_ENABLED:
             try:
@@ -208,16 +272,19 @@ def chat_stream(body: ChatIn):
                 mem_note = f"（我记得你之前提过:{recalled[0]['content'][:30]}…）"
             if LLM_ON:
                 try:
-                    for chunk in nyx_llm.chat_stream(SYSTEM_PROMPT, mem_note + msg):
+                    streamed = ""
+                    for chunk in nyx_llm.chat_stream(
+                        SYSTEM_PROMPT,
+                        mem_note + msg,
+                        history=session.context(max_turns=8),
+                    ):
+                        streamed += chunk
                         yield (
                             "data: "
-                            + json.dumps(
-                                {"chunk": chunk, "emotion": _infer_emotion(msg)}
-                            )
+                            + json.dumps({"chunk": chunk, "emotion": emotion})
                             + "\n\n"
                         )
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-                    return
+                    raw = streamed
                 except Exception as e:
                     raw = (
                         "唔，我这边网络打了个盹呢"
@@ -225,9 +292,21 @@ def chat_stream(body: ChatIn):
                     )
             else:
                 raw = nyx_llm.local_reply(msg) + mem_note
+                yield (
+                    "data: " + json.dumps({"chunk": raw, "emotion": emotion}) + "\n\n"
+                )
 
+        # 记录 assistant 回复 + 更新主动关心状态
         reply = nyx.wrap(raw)
-        emotion = _infer_emotion(msg)
+        session.add("assistant", reply)
+        proactive.touch(session_id=session.id, emotion=emotion)
+
+        if _looks_important(msg) and MEM_ENABLED:
+            try:
+                memory.remember(f"主人说：{msg}", "from-chat")
+            except Exception:
+                pass
+
         yield (
             "data: "
             + json.dumps(
@@ -235,6 +314,7 @@ def chat_stream(body: ChatIn):
                     "reply": reply,
                     "emotion": emotion,
                     "recalled": len(recalled),
+                    "session_id": session.id,
                     "done": True,
                 }
             )
@@ -265,7 +345,7 @@ def status():
         "core_health": core.health(),
         "memory": "universal-agent-memory" if MEM_ENABLED else "none",
         "persona": nyx.persona["name"],
-        "version": "0.4.0",
+        "version": "0.5.0",
     }
 
 
