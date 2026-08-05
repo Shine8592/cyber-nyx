@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
-"""Cyber Nyx — FastAPI 拟人助手服务（v0.5：多会话上下文管理）
+"""Cyber Nyx — FastAPI 拟人助手服务（v0.6：会话历史持久化）
 
 启动：
     python app.py                                  # 演示模式
@@ -27,7 +27,7 @@ from proactive import ProactiveCare
 from session import SessionManager
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="Cyber Nyx", version="0.5.0")
+app = FastAPI(title="Cyber Nyx", version="0.6.0")
 
 nyx = NyxAgent(str(BASE / "personas" / "nyx.json"))
 LLM_ON = nyx_llm.available()
@@ -393,7 +393,7 @@ def status():
         "memory": "universal-agent-memory" if MEM_ENABLED else "none",
         "persona": nyx.persona["name"],
         "mode": nyx.mode,
-        "version": "0.5.0",
+        "version": "0.6.0",
     }
 
 
@@ -428,7 +428,7 @@ if __name__ == "__main__":
     import uvicorn
 
     print(
-        "🌙 Cyber Nyx v0.5 · "
+        "🌙 Cyber Nyx v0.6 · "
         f"llm={'在线' if LLM_ON else '本地演示'} · "
         f"core={core.name} · "
         f"memory={'universal-agent-memory' if MEM_ENABLED else 'none'}"

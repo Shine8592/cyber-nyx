@@ -8,7 +8,7 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![v0.3](https://img.shields.io/badge/version-0.3-blue.svg)]()
+[![v0.6](https://img.shields.io/badge/version-0.6-blue.svg)]()
 
 ---
 
