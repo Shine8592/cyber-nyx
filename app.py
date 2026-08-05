@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
-"""Cyber Nyx — FastAPI 拟人助手服务（v0.3：流式输出 + 多格式兼容）
+"""Cyber Nyx — FastAPI 拟人助手服务（v0.4：主动关心）
 
 启动：
     python app.py                                  # 演示模式
@@ -22,9 +22,10 @@ from bridges.agent_core import NoCore
 from bridges.hermes_adapter import HermesCore
 from bridges.memory_bridge import MCPMemoryStore, NullMemoryStore
 from nyx import NyxAgent
+from proactive import ProactiveCare
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="Cyber Nyx", version="0.3.0")
+app = FastAPI(title="Cyber Nyx", version="0.4.0")
 
 nyx = NyxAgent(str(BASE / "personas" / "nyx.json"))
 LLM_ON = nyx_llm.available()
@@ -46,6 +47,9 @@ try:
 except Exception:
     memory = NullMemoryStore()
     MEM_ENABLED = False
+
+# --- 主动关心 ---
+proactive = ProactiveCare(nyx_agent=nyx, memory_store=memory if MEM_ENABLED else None)
 
 SYSTEM_PROMPT = (
     f"你叫{nyx.display}（{nyx.title}），现在是深夜陪伴时刻。"
@@ -116,7 +120,8 @@ def chat(body: ChatIn):
                 raw = nyx_llm.chat(SYSTEM_PROMPT, mem_note + msg)
             except Exception as e:
                 raw = (
-                    f"唔，我这边网络打了个盹呢（{type(e).__name__}）。稍后再试试好不好？"
+                    "唔，我这边网络打了个盹呢"
+                    f"（{type(e).__name__}）。稍后再试试好不好？"
                 )
         else:
             raw = nyx_llm.local_reply(msg) + mem_note
@@ -124,7 +129,10 @@ def chat(body: ChatIn):
     reply = nyx.wrap(raw)
     emotion = _infer_emotion(msg)
 
-    # 3) 记忆保存
+    # 3) 更新主动关心状态
+    proactive.touch(session_id="default", emotion=emotion)
+
+    # 4) 记忆保存
     if _looks_important(msg) and MEM_ENABLED:
         try:
             memory.remember(f"主人说：{msg}", "from-chat")
@@ -151,9 +159,11 @@ def chat_stream(body: ChatIn):
     if not msg:
 
         async def empty():
-            yield "data: " + json.dumps(
-                {"reply": "嗯？主人没有说话呢~", "emotion": "neutral"}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"reply": "嗯？主人没有说话呢~", "emotion": "neutral"})
+                + "\n\n"
+            )
 
         return StreamingResponse(empty(), media_type="text/event-stream")
 
@@ -199,30 +209,49 @@ def chat_stream(body: ChatIn):
             if LLM_ON:
                 try:
                     for chunk in nyx_llm.chat_stream(SYSTEM_PROMPT, mem_note + msg):
-                        yield "data: " + json.dumps(
-                            {"chunk": chunk, "emotion": _infer_emotion(msg)}
-                        ) + "\n\n"
+                        yield (
+                            "data: "
+                            + json.dumps(
+                                {"chunk": chunk, "emotion": _infer_emotion(msg)}
+                            )
+                            + "\n\n"
+                        )
                     yield f"data: {json.dumps({'done': True})}\n\n"
                     return
                 except Exception as e:
                     raw = (
-                    f"唔，我这边网络打了个盹呢（{type(e).__name__}）。稍后再试试好不好？"
-                )
+                        "唔，我这边网络打了个盹呢"
+                        f"（{type(e).__name__}）。稍后再试试好不好？"
+                    )
             else:
                 raw = nyx_llm.local_reply(msg) + mem_note
 
         reply = nyx.wrap(raw)
         emotion = _infer_emotion(msg)
-        yield "data: " + json.dumps(
-            {
-                "reply": reply,
-                "emotion": emotion,
-                "recalled": len(recalled),
-                "done": True,
-            }
-        ) + "\n\n"
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "reply": reply,
+                    "emotion": emotion,
+                    "recalled": len(recalled),
+                    "done": True,
+                }
+            )
+            + "\n\n"
+        )
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.get("/api/care")
+def care(session_id: str | None = None):
+    """主动关心端点。前端轮询调用，返回关心消息或空。"""
+    sid = session_id or "default"
+    msg = proactive.check_and_notify(sid)
+    if msg:
+        return JSONResponse({"care": True, "message": msg, "session_id": sid})
+    return JSONResponse({"care": False, "session_id": sid})
 
 
 @app.get("/api/status")
@@ -236,7 +265,7 @@ def status():
         "core_health": core.health(),
         "memory": "universal-agent-memory" if MEM_ENABLED else "none",
         "persona": nyx.persona["name"],
-        "version": "0.3.0",
+        "version": "0.4.0",
     }
 
 
@@ -281,7 +310,7 @@ if __name__ == "__main__":
     import uvicorn
 
     print(
-        "🌙 Cyber Nyx v0.3 · "
+        "🌙 Cyber Nyx v0.4 · "
         f"llm={'在线' if LLM_ON else '本地演示'} · "
         f"core={core.name} · "
         f"memory={'universal-agent-memory' if MEM_ENABLED else 'none'}"

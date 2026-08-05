@@ -35,7 +35,7 @@ class TestStatus:
         assert "name" in data
         assert "display" in data
         assert "version" in data
-        assert data["version"] == "0.3.0"
+        assert data["version"] == "0.4.0"
 
     def test_status_llm_field(self):
         resp = client.get("/api/status")

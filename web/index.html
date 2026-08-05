@@ -99,7 +99,7 @@
     </select>
     <button id="send">发送</button>
   </div>
-  <div class="foot">Cyber Nyx v0.3 · Powered by Hermes Agent + universal-agent-memory</div>
+  <div class="foot">Cyber Nyx v0.4 · Powered by Hermes Agent + universal-agent-memory</div>
 </div>
 
 <script>
@@ -124,6 +124,22 @@
     if (d.core === 'hermes') modeEl.textContent = 'Hermes 内核·记忆在线';
     else modeEl.textContent = '本地演示';
   }).catch(()=>{});
+
+  // --- 主动关心轮询 ---
+  async function checkProactiveCare() {
+    try {
+      const resp = await fetch('/api/care?session_id=default');
+      const data = await resp.json();
+      if (data.care && data.message) {
+        addBubble(data.message, 'nyx');
+      }
+    } catch (e) { /* 静默 */ }
+  }
+  // 页面加载 3 秒后首次检查（首次问候），之后每 5 分钟轮询
+  setTimeout(() => {
+    checkProactiveCare();
+    setInterval(checkProactiveCare, 5 * 60 * 1000);
+  }, 3000);
 
   function addBubble(text, who) {
     const b = document.createElement('div');
