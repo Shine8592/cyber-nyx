@@ -69,6 +69,10 @@
     border-radius:10px; padding:7px 12px; font-size:12px; cursor:pointer; transition: all .2s;
   }
   .mem-btn:hover { color:var(--text); border-color:var(--violet); background:rgba(124,111,240,.12); }
+  .mode-switch { display:flex; align-items:center; gap:4px; padding:3px; border:1px solid rgba(255,255,255,.12); border-radius:20px; background:rgba(255,255,255,.04); }
+  .mode-switch button { border:none; background:transparent; color:var(--dim); font-size:12px; padding:4px 10px; border-radius:16px; cursor:pointer; transition:all .2s; }
+  .mode-switch button:hover { color:var(--text); }
+  .mode-switch button.active { background:var(--violet); color:#fff; box-shadow:0 2px 10px rgba(124,111,240,.4); }
 
   .memory-panel {
     position:fixed; top:0; right:-360px; width:340px; height:100vh; z-index:30;
@@ -133,6 +137,10 @@
       <p>夜之女神 · 赛博助手 · Hermes 内核</p>
     </div>
     <div class="status"><span class="dot"></span><span id="mode">连接中</span></div>
+    <div class="mode-switch" id="modeSwitch" title="切换工作 / 陪伴模式">
+      <button data-mode="companion">🌙 陪伴</button>
+      <button data-mode="work">⚡ 工作</button>
+    </div>
     <button class="mem-btn" id="memBtn" title="查看 Nyx 的记忆">🧠 记忆</button>
     <button class="new-chat" id="newChat" title="开启新对话">新对话</button>
   </header>
@@ -154,7 +162,7 @@
     </select>
     <button id="send">发送</button>
   </div>
-  <div class="foot">Cyber Nyx v0.7 · 小夜 · 历史恢复 / 记忆面板 / WS 实时关心</div>
+  <div class="foot">Cyber Nyx v0.7 · 小夜 · 历史恢复 / 记忆面板 / WS 实时关心 / 模式切换</div>
 </div>
 
 <div class="memory-panel" id="memoryPanel">
@@ -188,6 +196,30 @@
     if (d.core === 'hermes') modeEl.textContent = 'Hermes 内核·记忆在线';
     else modeEl.textContent = '本地演示';
   }).catch(()=>{});
+
+  // --- 模式切换：陪伴 / 工作 ---
+  const modeSwitch = document.getElementById('modeSwitch');
+  const modeBtns = modeSwitch.querySelectorAll('button');
+
+  function setModeUI(mode) {
+    modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  }
+  // 初始化：拉取当前模式
+  fetch('/api/mode').then(r=>r.json()).then(d => setModeUI(d.mode)).catch(()=>{});
+  // 点击切换
+  modeSwitch.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn || btn.classList.contains('active')) return;
+    const mode = btn.dataset.mode;
+    fetch('/api/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    }).then(r=>r.json()).then(d => {
+      setModeUI(d.mode);
+      addBubble('小夜切换到了' + (d.mode === 'work' ? '⚡ 工作模式' : '🌙 陪伴模式') + '，' + (d.message || ''), 'nyx');
+    }).catch(()=>{});
+  });
 
   // --- 会话管理：localStorage 持久化 session_id ---
   const SESSION_KEY = 'cyber_nyx_session_id';
