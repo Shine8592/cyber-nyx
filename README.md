@@ -109,10 +109,6 @@ python app.py
 
 访问 http://127.0.0.1:8000
 
-> 💾 **记忆系统内置**：自研记忆系统（universal-agent-memory：BM25+向量+RRF 混合检索）源码随项目 vendor 在 `memory/` 目录，随仓库一起发布，无需单独 clone。装不装向量检索重依赖由你定：
-> - `pip install -r memory/requirements.txt`（sentence-transformers + faiss，完整语义检索）
-> - 不装也能跑：自动降级纯内存模式，聊天正常、记忆召回能力减弱
-
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -125,8 +121,6 @@ python app.py
 | `NYX_STREAM` | 启用 SSE 流式 | 0 |
 | `NYX_RETRY_MAX` | LLM 重试次数 | 3 |
 | `NYX_RETRY_BASE` | 重试基础秒数 | 1.0 |
-| `MEMORY_STORE` | 记忆数据目录 | `~/.hermes/memory` |
-| `NYX_MCP_SCRIPT` | mcp_server.py 路径（不设则自动探测项目内 `memory/scripts/`） | 自动 |
 
 ---
 
@@ -165,7 +159,7 @@ GET /api/status
 - [x] 项目启动
 - [x] 人设配置文件规范（Persona JSON Schema / personas/nyx.json）
 - [x] **Hermes Agent 适配层（AgentCore 接口 + Hermes CLI 桥接）**
-- [x] **记忆系统接入（内置 universal-agent-memory：召回/回写/跨会话，源码随仓库发布）**
+- [x] **记忆系统接入（universal-agent-memory MCP：召回/回写/跨会话）**
 - [x] 拟人 UI 基础版（Web 界面 + 星空夜景 + 情绪表情）
 - [x] LLM 重试 + 流式输出
 - [x] 多格式 API 兼容（text/json/sse）
