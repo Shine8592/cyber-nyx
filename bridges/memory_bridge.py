@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
-"""记忆层桥接 — universal-agent-memory MCP（自研记忆系统）
+"""记忆层桥接 — universal-agent-memory 记忆系统（自研，已内置 memory/）
 
-把咱自己研发的 universal-agent-memory（BM25+向量+RRF 混合检索）
+把自研 universal-agent-memory（BM25+向量+RRF 混合检索）
 接入 cyber-nyx 拟人壳，实现跨会话记忆。
+记忆系统源码随项目 vendor 在 memory/ 目录，随仓库发布。
 
-通过 MCP JSON-RPC over stdio 与 mcp_server.py 通信。
+通过 MCP JSON-RPC over stdio 与 memory/scripts/mcp_server.py 通信。
 使用长连接复用，避免每次操作启动子进程的开销。
 """
 
@@ -138,9 +139,11 @@ class _MCPConnection:
 
 
 def _default_script() -> str:
-    """自动探测 universal-agent-memory 的 mcp_server.py。"""
+    """自动探测记忆系统的 mcp_server.py（优先项目内置 memory/ vendor）。"""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidates = [
         os.environ.get("NYX_MCP_SCRIPT", ""),
+        os.path.join(project_root, "memory", "scripts", "mcp_server.py"),
         "/home/yaner/universal-agent-memory/scripts/mcp_server.py",
         "/root/.hermes/scripts/mcp_server.py",
     ]
