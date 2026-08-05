@@ -53,8 +53,12 @@ except Exception:
 # --- 主动关心 ---
 proactive = ProactiveCare(nyx_agent=nyx, memory_store=memory if MEM_ENABLED else None)
 
-# --- 多会话上下文管理 ---
-sessions = SessionManager(max_sessions=200, ttl=3600)
+# --- 多会话上下文管理（可选记忆持久化） ---
+sessions = SessionManager(
+    max_sessions=200,
+    ttl=3600,
+    memory_store=memory if MEM_ENABLED else None,
+)
 
 SYSTEM_PROMPT = (
     f"你叫{nyx.display}（{nyx.title}），现在是深夜陪伴时刻。"
@@ -201,6 +205,9 @@ def chat(body: ChatIn):
     session.add("user", msg, emotion=emotion)
     session.add("assistant", reply)
 
+    # 3.5) 持久化会话历史（universal-agent-memory）
+    sessions.persist(session)
+
     # 4) 更新主动关心状态
     proactive.touch(session_id=session.id, emotion=emotion)
 
@@ -338,6 +345,7 @@ def chat_stream(body: ChatIn):
         nyx.update_emotion(emotion)
         session.add("assistant", reply)
         proactive.touch(session_id=session.id, emotion=emotion)
+        sessions.persist(session)
 
         if _looks_important(msg) and MEM_ENABLED:
             try:

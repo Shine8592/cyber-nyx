@@ -63,12 +63,18 @@ class Session:
 
 
 class SessionManager:
-    """内存会话管理器：创建、复用、过期清理。"""
+    """内存会话管理器：创建、复用、过期清理（可选记忆持久化）。"""
 
-    def __init__(self, max_sessions: int = 100, ttl: int = 3600):
+    def __init__(
+        self,
+        max_sessions: int = 100,
+        ttl: int = 3600,
+        memory_store=None,
+    ):
         self.sessions: dict[str, Session] = {}
         self.max_sessions = max_sessions
         self.ttl = ttl  # 会话空闲过期时间（秒）
+        self.memory_store = memory_store  # 可选：universal-agent-memory 持久化
 
     def get_or_create(self, session_id: str | None = None) -> Session:
         """获取已有会话或创建新会话（幂等：传入的 id 不存在则用它创建）。"""
@@ -81,6 +87,7 @@ class SessionManager:
             session = Session(id=session_id)  # 客户端持有该 id，直接复用
         else:
             session = Session()
+        self._restore(session)  # 尝试从记忆恢复历史
         self.sessions[session.id] = session
         self._evict_if_needed()
         return session
@@ -90,8 +97,53 @@ class SessionManager:
         return self.sessions.get(session_id)
 
     def delete(self, session_id: str):
-        """删除一个会话（前端"新对话"按钮使用）。"""
+        """删除一个会话（前端"新对话"按钮使用）。同时清理持久化记忆。"""
         self.sessions.pop(session_id, None)
+        if self.memory_store is not None:
+            try:
+                self.memory_store.forget_chat_history(session_id)
+            except Exception:
+                pass
+
+    def persist(self, session: Session) -> bool:
+        """将会话历史写入记忆系统。"""
+        if self.memory_store is None:
+            return False
+        msgs = [
+            {
+                "role": m.role,
+                "content": m.content,
+                "emotion": m.emotion,
+                "timestamp": m.timestamp,
+            }
+            for m in session.messages
+        ]
+        if not msgs:
+            return False
+        try:
+            return bool(self.memory_store.save_chat_history(session.id, msgs))
+        except Exception:
+            return False
+
+    def _restore(self, session: Session):
+        """从记忆系统恢复会话历史（仅当会话为空时）。"""
+        if self.memory_store is None or session.messages:
+            return
+        try:
+            msgs = self.memory_store.load_chat_history(session.id)
+        except Exception:
+            return
+        for m in msgs:
+            session.messages.append(
+                Message(
+                    role=m.get("role", "user"),
+                    content=m.get("content", ""),
+                    emotion=m.get("emotion", "neutral"),
+                    timestamp=m.get("timestamp", time.time()),
+                )
+            )
+        if session.messages:
+            session.last_active = time.time()
 
     def count(self) -> int:
         return len(self.sessions)
