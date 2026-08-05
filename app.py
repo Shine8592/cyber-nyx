@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
 """Cyber Nyx — FastAPI 拟人助手服务（v0.2：接入 Hermes 内核 + universal-agent-memory 记忆）
 
 启动：

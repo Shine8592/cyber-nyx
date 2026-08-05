@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
 """Hermes Adapter — 用 Hermes CLI 作为 cyber-nyx 的 Agent 内核实现。
 
 符合 bridges/agent_core.py 的 AgentCore 接口。

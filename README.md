@@ -94,6 +94,20 @@ python nyx.py --persona default
 
 ---
 
+## 👥 项目团队
+
+Cyber Nyx 由三位开发者共创：
+
+| 成员 | 角色 | GitHub |
+|------|------|--------|
+| **聆听花瓣雨** | 主创 / 项目负责人 | [Shine8592](https://github.com/Shine8592) |
+| **疯ˣ** | 合创人 / 核心开发 | [MUC260](https://github.com/MUC260) |
+| **可怕食肉动物** | 合创人 / 核心开发 | [BCZZB](https://github.com/BCZZB) |
+
+三人小组以模块化协作推进：拟人 UI、Hermes 内核桥接、记忆系统、语音交互各司其职，主创把关整体方向。
+
+---
+
 ## 🤝 贡献
 
 欢迎 PR / Issue / Star ⭐。目标是做一个真正"有人味"的赛博助手。

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
 """Agent Core 抽象接口层（v0.2 核心）
 
 cyber-nyx 与「具体 Agent 内核」解耦：

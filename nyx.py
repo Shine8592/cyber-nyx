@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
 """Cyber Nyx — 夜之女神 · 赛博助手（Hermes 拟人壳层入口）
 
 把「赛博小雅」式拟人 UI/人设，套在 Hermes Agent 之上。

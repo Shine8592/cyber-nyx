@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
 """记忆层桥接 — universal-agent-memory MCP（自研记忆系统）
 
 把咱自己研发的 universal-agent-memory（BM25+向量+RRF 混合检索）
