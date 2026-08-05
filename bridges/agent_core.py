@@ -11,18 +11,19 @@ cyber-nyx 与「具体 Agent 内核」解耦：
     class MyAgent(AgentCore):
         def submit(self, task: str) -> str: ...
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
 class ToolResult:
     """工具/任务执行结果。"""
-    ok: bool                      # 是否成功
-    output: str                   # 文本输出（人设润色前的原始结果）
-    error: Optional[str] = None   # 失败时的错误描述
-    took: float = 0.0             # 耗时（秒）
+
+    ok: bool  # 是否成功
+    output: str  # 文本输出（人设润色前的原始结果）
+    error: str | None = None  # 失败时的错误描述
+    took: float = 0.0  # 耗时（秒）
     meta: dict = field(default_factory=dict)  # 内核自定义元信息
 
 
@@ -35,7 +36,7 @@ class AgentCore(ABC):
     稳定性契约：cyber-nyx 只依赖本接口，不依赖内核内部实现。
     """
 
-    name: str = "generic"                     # 内核名
+    name: str = "generic"  # 内核名
 
     @abstractmethod
     def submit(self, task: str, timeout: int = 120) -> ToolResult:
@@ -61,6 +62,7 @@ class AgentCore(ABC):
 
 class NoCore(AgentCore):
     """兜底实现：未配置任何内核时（演示模式）。"""
+
     name = "none"
 
     def submit(self, task: str, timeout: int = 120) -> ToolResult:

@@ -7,13 +7,14 @@
 通过 MCP JSON-RPC over stdio 与 mcp_server.py 通信。
 使用长连接复用，避免每次操作启动子进程的开销。
 """
+
 import json
 import os
 import subprocess
 import threading
 import time
 from abc import ABC, abstractmethod
-from queue import Queue, Empty
+from queue import Empty, Queue
 
 
 class MemoryStore(ABC):
@@ -43,7 +44,9 @@ class _MCPConnection:
         self._env = {
             **os.environ,
             "MEMORY_STORE": os.environ.get("MEMORY_STORE", "/root/.hermes/memory"),
-            "MEMORY_PROJECT_ROOT": os.environ.get("MEMORY_PROJECT_ROOT", "/root/.hermes"),
+            "MEMORY_PROJECT_ROOT": os.environ.get(
+                "MEMORY_PROJECT_ROOT", "/root/.hermes"
+            ),
             "MEMORY_GLOBAL_DIR": os.environ.get("MEMORY_GLOBAL_DIR", "/root/.hermes"),
         }
         self._proc = None
@@ -63,10 +66,12 @@ class _MCPConnection:
             env=self._env,
             cwd=os.path.dirname(self.script) or None,
         )
+
         # 后台线程持续读取 stdout
         def _read_stdout():
             for line in iter(self._proc.stdout.readline, ""):
                 self._stdout_queue.put(line.rstrip("\n"))
+
         self._reader_thread = threading.Thread(target=_read_stdout, daemon=True)
         self._reader_thread.start()
         self._started = True
@@ -74,15 +79,28 @@ class _MCPConnection:
     def _call(self, tool: str, args: dict, timeout: int = 120) -> str:
         self._ensure_started()
         payload = (
-            json.dumps({
-                "jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"protocolVersion": "2024-11-05", "capabilities": {},
-                           "clientInfo": {"name": "cyber-nyx", "version": "0.2"}},
-            }) + "\n" +
-            json.dumps({
-                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                "params": {"name": tool, "arguments": args},
-            }) + "\n"
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "cyber-nyx", "version": "0.2"},
+                    },
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": tool, "arguments": args},
+                }
+            )
+            + "\n"
         )
         self._proc.stdin.write(payload)
         self._proc.stdin.flush()
@@ -93,7 +111,9 @@ class _MCPConnection:
                 line = self._stdout_queue.get(timeout=min(1.0, deadline - time.time()))
             except Empty:
                 if self._proc.poll() is not None:
-                    raise RuntimeError(f"MCP server 进程已退出 (rc={self._proc.returncode})")
+                    raise RuntimeError(
+                        f"MCP server 进程已退出 (rc={self._proc.returncode})"
+                    )
                 continue
             if not line.strip():
                 continue
@@ -149,10 +169,13 @@ class MCPMemoryStore(MemoryStore):
         items = []
         # 响应形如 "1. 内容 (score=0.62)"
         import re
+
         for line in raw.splitlines():
             m = re.match(r"^\s*\d+\.\s+(.+?)\s*\(score=([\d.]+)\)", line)
             if m:
-                items.append({"content": m.group(1).strip(), "score": float(m.group(2))})
+                items.append(
+                    {"content": m.group(1).strip(), "score": float(m.group(2))}
+                )
         return items
 
     def remember(self, content: str, tags: str = "") -> bool:

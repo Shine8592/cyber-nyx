@@ -1,23 +1,20 @@
 """Integration tests for app.py API endpoints."""
-import json
+
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
-from fastapi.testclient import TestClient
+# Set env vars BEFORE importing app
+os.environ.setdefault("NYX_API_BASE", "")
+os.environ.setdefault("NYX_API_KEY", "")
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-# Must set env vars before importing app
-os.environ.setdefault("NYX_API_BASE", "")
-os.environ.setdefault("NYX_API_KEY", "")
+from fastapi.testclient import TestClient  # noqa: E402
 
 from app import app  # noqa: E402
-
-client = TestClient(app)
 
 client = TestClient(app)
 
@@ -86,12 +83,16 @@ class TestChatJson:
 
 class TestChatStream:
     def test_sse_stream_endpoint_exists(self):
-        resp = client.post("/api/chat/stream", json={"message": "你好", "format": "sse"})
+        resp = client.post(
+            "/api/chat/stream", json={"message": "你好", "format": "sse"}
+        )
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers["content-type"]
 
     def test_sse_stream_returns_done(self):
-        resp = client.post("/api/chat/stream", json={"message": "你好", "format": "sse"})
+        resp = client.post(
+            "/api/chat/stream", json={"message": "你好", "format": "sse"}
+        )
         content = resp.text
         assert "done" in content or "reply" in content
 
@@ -160,4 +161,8 @@ class TestErrorHandling:
             data = resp.json()
             assert "reply" in data
             # Should contain error message in reply
-            assert "网络" in data["reply"] or "error" in data["reply"].lower() or len(data["reply"]) > 0
+            assert (
+                "网络" in data["reply"]
+                or "error" in data["reply"].lower()
+                or len(data["reply"]) > 0
+            )

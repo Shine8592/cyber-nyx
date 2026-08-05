@@ -8,6 +8,7 @@
     python nyx.py                 # 用默认 persona (personas/nyx.json)
     python nyx.py --persona xxx   # 指定 persona 文件
 """
+
 import argparse
 import json
 import random
@@ -52,7 +53,9 @@ class NyxAgent:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--persona", default="personas/nyx.json", help="persona 配置文件路径")
+    ap.add_argument(
+        "--persona", default="personas/nyx.json", help="persona 配置文件路径"
+    )
     args = ap.parse_args()
 
     nyx = NyxAgent(args.persona)

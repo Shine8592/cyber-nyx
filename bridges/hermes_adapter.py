@@ -6,6 +6,7 @@
 
 Hermes 升级 → 只改这个 adapter 的调用细节，cyber-nyx 主体不动。
 """
+
 import os
 import shutil
 import subprocess
@@ -20,7 +21,9 @@ class HermesCore(AgentCore):
         # 优先显式配置，其次 PATH，最后已知安装路径
         self.bin = os.environ.get("NYX_HERMES_BIN", "")
         if not self.bin:
-            self.bin = shutil.which("hermes") or "/usr/local/lib/hermes-agent/venv/bin/hermes"
+            self.bin = (
+                shutil.which("hermes") or "/usr/local/lib/hermes-agent/venv/bin/hermes"
+            )
         self.model = model or os.environ.get("NYX_HERMES_MODEL", "")
         self.provider = provider or os.environ.get("NYX_HERMES_PROVIDER", "")
 
@@ -30,8 +33,11 @@ class HermesCore(AgentCore):
             "明确的单一任务指令（一句话，含明确目标），不要加语气。"
         )
 
-    def submit(self, task: str, timeout: int = 120, persona_inject: str = "") -> ToolResult:
+    def submit(
+        self, task: str, timeout: int = 120, persona_inject: str = ""
+    ) -> ToolResult:
         import time
+
         t0 = time.time()
         # 人设注入：让 Hermes 内核以 Nyx 的身份和语气执行
         prompt = task
@@ -45,7 +51,10 @@ class HermesCore(AgentCore):
 
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
                 cwd=os.environ.get("NYX_HERMES_CWD"),
             )
             took = time.time() - t0
@@ -55,16 +64,23 @@ class HermesCore(AgentCore):
             return ToolResult(
                 ok=False,
                 output=proc.stdout.strip() or proc.stderr.strip() or "(Hermes 无输出)",
-                error=f"exit={proc.returncode}", took=took,
+                error=f"exit={proc.returncode}",
+                took=took,
             )
         except subprocess.TimeoutExpired:
-            return ToolResult(ok=False, output="", error=f"Hermes 超时({timeout}s)", took=timeout)
+            return ToolResult(
+                ok=False, output="", error=f"Hermes 超时({timeout}s)", took=timeout
+            )
         except FileNotFoundError:
-            return ToolResult(ok=False, output="", error="找不到 hermes 命令，请确认已安装")
+            return ToolResult(
+                ok=False, output="", error="找不到 hermes 命令，请确认已安装"
+            )
 
     def health(self) -> bool:
         try:
-            r = subprocess.run([self.bin, "--version"], capture_output=True, text=True, timeout=10)
+            r = subprocess.run(
+                [self.bin, "--version"], capture_output=True, text=True, timeout=10
+            )
             return r.returncode == 0
         except Exception:
             return False

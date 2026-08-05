@@ -12,11 +12,12 @@
     NYX_RETRY_BASE  重试基础秒数 (默认 1.0)
     NYX_STREAM      设为 "1" 启用 SSE 流式输出
 """
+
 import json
 import os
 import time
 import urllib.request
-from typing import Generator, Optional
+from collections.abc import Generator
 
 MAX_RETRIES = int(os.environ.get("NYX_RETRY_MAX", "3"))
 RETRY_BASE = float(os.environ.get("NYX_RETRY_BASE", "1.0"))
@@ -76,7 +77,9 @@ def chat(system_prompt: str, user_message: str, temperature: float = 0.8) -> str
     raise last_err
 
 
-def chat_stream(system_prompt: str, user_message: str, temperature: float = 0.8) -> Generator[str, None, None]:
+def chat_stream(
+    system_prompt: str, user_message: str, temperature: float = 0.8
+) -> Generator[str, None, None]:
     """SSE 流式输出，逐块 yield 文本片段。失败自动重试。"""
     payload = {
         "model": _resolve_cfg()["model"],
@@ -96,7 +99,9 @@ def chat_stream(system_prompt: str, user_message: str, temperature: float = 0.8)
                 if not line.startswith("data: ") or line == "data: [DONE]":
                     continue
                 chunk = json.loads(line[6:])
-                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                delta = (
+                    chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                )
                 if delta:
                     yield delta
             return
@@ -121,5 +126,8 @@ _LOCAL_REPLIES = [
 def local_reply(user_message: str) -> str:
     """本地演示回复：带一点拟人味道，绝不假装是真实智能。"""
     import hashlib
-    idx = int(hashlib.md5(user_message.encode("utf-8")).hexdigest(), 16) % len(_LOCAL_REPLIES)
+
+    idx = int(hashlib.md5(user_message.encode("utf-8")).hexdigest(), 16) % len(
+        _LOCAL_REPLIES
+    )
     return _LOCAL_REPLIES[idx]
