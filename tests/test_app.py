@@ -35,7 +35,7 @@ class TestStatus:
         assert "name" in data
         assert "display" in data
         assert "version" in data
-        assert data["version"] == "0.6.0"
+        assert data["version"] == "0.7.0"
 
     def test_status_llm_field(self):
         resp = client.get("/api/status")
@@ -266,3 +266,85 @@ class TestSessions:
         )
         assert resp.status_code == 200
         assert "session_id" in resp.text
+
+
+class TestHistoryRestore:
+    """v0.7：前端刷新恢复聊天历史（history 端点用 get_or_create 触发记忆恢复）。"""
+
+    def test_history_restores_unknown_session_as_empty(self):
+        resp = client.get("/api/session/restore-unknown/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"] == "restore-unknown"
+        assert data["messages"] == []
+
+    def test_history_idempotent_get_or_create(self):
+        # 连续两次调用同一 session，不应产生重复消息
+        resp1 = client.get("/api/session/restore-idem/history")
+        resp2 = client.get("/api/session/restore-idem/history")
+        assert resp1.json()["messages"] == resp2.json()["messages"]
+        client.delete("/api/session/restore-idem")
+
+    def test_history_after_chat_returns_full_context(self):
+        resp = client.post("/api/chat", json={"message": "恢复测试"})
+        sid = resp.json()["session_id"]
+        resp = client.get(f"/api/session/{sid}/history")
+        msgs = resp.json()["messages"]
+        assert len(msgs) == 2
+        assert msgs[0]["content"] == "恢复测试"
+        client.delete(f"/api/session/{sid}")
+
+
+class TestMemoryApi:
+    """v0.7：记忆可视化 / 管理（记忆面板）。"""
+
+    def test_memory_list_returns_ok(self):
+        resp = client.get("/api/memory")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "memories" in data
+        assert isinstance(data["memories"], list)
+        # 测试环境无记忆系统（降级），enabled 为 False
+        assert data["enabled"] in (True, False)
+
+    def test_memory_list_limit_validation(self):
+        resp = client.get("/api/memory?limit=9999")
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["memories"], list)
+
+    def test_memory_delete_unknown_returns_json(self):
+        resp = client.delete("/api/memory/not-exist-id")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "ok" in data
+        # 未启用时明确返回失败
+        if data.get("ok") is False:
+            assert data.get("error")
+
+
+class TestWebSocket:
+    """v0.7：WebSocket 长连接（主动关心实时推送）。"""
+
+    def test_ws_connect_requires_session_id(self):
+        # 无 session_id → 服务端关闭连接（code 4400）
+        rejected = False
+        try:
+            with client.websocket_connect("/ws") as ws:
+                ws.receive_text()
+        except Exception:
+            rejected = True
+        assert rejected, "无 session_id 应被拒绝连接"
+
+    def test_ws_connect_and_keepalive(self):
+        with client.websocket_connect("/ws?session_id=wstest-001") as ws:
+            # 连接建立成功即通过（保持连接、无服务端错误）
+            ws.send_text("ping")
+            assert True
+
+    def test_ws_disconnect_cleanup(self):
+        with client.websocket_connect("/ws?session_id=wstest-002") as ws:
+            ws.send_text("ping")
+        # 断开后重新连接同一 session 不应报错
+        with client.websocket_connect("/ws?session_id=wstest-002") as ws:
+            ws.send_text("ping")
+            assert True

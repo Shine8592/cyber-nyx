@@ -158,6 +158,11 @@ class ProactiveCare:
         if session_id in self._sessions and care_type in _TIME_RANGES:
             self._sessions[session_id]["greeted_periods"].add(care_type)
 
+        # 一次性关心（first_meet / idle_reminder / comfort）触发后视为一次互动，
+        # 重置活跃计时并清掉情绪标记，避免轮询 / WS 推送重复触发刷屏。
+        if care_type in ("first_meet", "idle_reminder", "comfort"):
+            self.touch(session_id, "neutral")
+
         # 如果有记忆系统，尝试召回上下文增强关心
         if self.memory and care_type in ("comfort", "idle_reminder"):
             try:

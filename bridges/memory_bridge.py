@@ -288,6 +288,50 @@ class MCPMemoryStore(MemoryStore):
         except Exception:
             return False
 
+    # --- 记忆可视化 / 管理（记忆面板） ---
+
+    @staticmethod
+    def _memory_dir():
+        """短期记忆目录（stm/*.json，每条记忆一个文件）。"""
+        from pathlib import Path as _P
+
+        store = os.environ.get("MEMORY_STORE", _P.home() / ".hermes" / "memory")
+        return _P(store) / "stm"
+
+    def list_recent(self, limit: int = 30) -> list:
+        """列出最近记忆（不依赖检索，直接读 STM 目录，按时间倒序）。"""
+        import contextlib
+
+        stm = self._memory_dir()
+        items = []
+        if stm.exists():
+            for f in stm.glob("*.json"):
+                with contextlib.suppress(Exception):
+                    d = json.loads(f.read_text(encoding="utf-8"))
+                    content = d.get("content", "")
+                    # 内部会话快照（[chat-session:xxx]）不进入用户记忆面板
+                    if content.startswith("[chat-session:"):
+                        continue
+                    items.append(
+                        {
+                            "id": d.get("id", f.stem),
+                            "content": content,
+                            "timestamp": d.get("timestamp", ""),
+                            "mem_type": d.get("mem_type", ""),
+                            "tags": (d.get("metadata") or {}).get("tags", []),
+                        }
+                    )
+        items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return items[:limit]
+
+    def forget(self, keyword: str) -> bool:
+        """按关键词删除记忆（MCP memory_forget，内容包含匹配）。"""
+        try:
+            raw = self._call("memory_forget", {"keyword": keyword})
+            return "0 条" not in raw
+        except Exception:
+            return False
+
 
 class NullMemoryStore(MemoryStore):
     """演示兜底：无记忆。"""
@@ -309,3 +353,9 @@ class NullMemoryStore(MemoryStore):
 
     def forget_chat_history(self, session_id: str) -> bool:
         return True
+
+    def list_recent(self, limit: int = 30) -> list:
+        return []
+
+    def forget(self, keyword: str) -> bool:
+        return False

@@ -64,6 +64,45 @@
   }
   .new-chat:hover { color:var(--text); border-color:var(--gold); background:rgba(201,163,92,.1); }
 
+  .mem-btn {
+    background:transparent; border:1px solid rgba(255,255,255,.14); color:var(--dim);
+    border-radius:10px; padding:7px 12px; font-size:12px; cursor:pointer; transition: all .2s;
+  }
+  .mem-btn:hover { color:var(--text); border-color:var(--violet); background:rgba(124,111,240,.12); }
+
+  .memory-panel {
+    position:fixed; top:0; right:-360px; width:340px; height:100vh; z-index:30;
+    background:linear-gradient(180deg, #171b3e, #10142e);
+    border-left:1px solid rgba(201,163,92,.25);
+    box-shadow:-8px 0 40px rgba(0,0,0,.5);
+    display:flex; flex-direction:column;
+    transition: right .3s ease; padding:18px 16px;
+  }
+  .memory-panel.open { right:0; }
+  .memory-panel-head { display:flex; align-items:center; justify-content:space-between; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,.1); }
+  .memory-panel-head span { font-size:15px; font-weight:600; color:var(--text); }
+  .memory-close {
+    background:transparent; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:4px 8px;
+  }
+  .memory-close:hover { color:var(--text); }
+  .memory-list { flex:1; overflow-y:auto; margin-top:12px; display:flex; flex-direction:column; gap:8px; }
+  .mem-item {
+    background:var(--card); border:1px solid rgba(255,255,255,.08); border-radius:10px;
+    padding:9px 11px; display:flex; align-items:flex-start; gap:8px;
+  }
+  .mem-item:hover { border-color:rgba(201,163,92,.3); }
+  .mem-info { flex:1; min-width:0; }
+  .mem-content { font-size:13px; color:var(--text); line-height:1.45; word-break:break-all; }
+  .mem-meta { font-size:11px; color:var(--dim); margin-top:4px; }
+  .mem-del {
+    flex-shrink:0; background:transparent; border:1px solid rgba(255,255,255,.12);
+    color:var(--dim); border-radius:8px; padding:4px 8px; font-size:11px; cursor:pointer; transition:all .2s;
+  }
+  .mem-del:hover { color:#ff9a9a; border-color:rgba(255,120,120,.5); }
+  .mem-empty { color:var(--dim); font-size:13px; text-align:center; padding:30px 10px; }
+  .memory-foot { text-align:center; color:var(--dim); font-size:11px; padding-top:10px; }
+
+
   .input-bar { display:flex; gap:10px; padding:14px 0 20px; }
   .input-bar input {
     flex:1; background:var(--card); border:1px solid rgba(255,255,255,.12); border-radius:12px;
@@ -94,6 +133,7 @@
       <p>夜之女神 · 赛博助手 · Hermes 内核</p>
     </div>
     <div class="status"><span class="dot"></span><span id="mode">连接中</span></div>
+    <button class="mem-btn" id="memBtn" title="查看 Nyx 的记忆">🧠 记忆</button>
     <button class="new-chat" id="newChat" title="开启新对话">新对话</button>
   </header>
 
@@ -114,7 +154,16 @@
     </select>
     <button id="send">发送</button>
   </div>
-  <div class="foot">Cyber Nyx v0.6 · Powered by Hermes Agent + universal-agent-memory</div>
+  <div class="foot">Cyber Nyx v0.7 · 小夜 · 历史恢复 / 记忆面板 / WS 实时关心</div>
+</div>
+
+<div class="memory-panel" id="memoryPanel">
+  <div class="memory-panel-head">
+    <span>🧠 Nyx 的记忆</span>
+    <button class="memory-close" id="memClose" title="关闭">✕</button>
+  </div>
+  <div class="memory-list" id="memoryList"><div class="mem-empty">正在读取记忆…</div></div>
+  <div class="memory-foot" id="memoryFoot"></div>
 </div>
 
 <script>
@@ -168,6 +217,10 @@
     chat.innerHTML = '';
     addBubble('主人，我们重新开始吧~ 今晚想聊些什么呢？', 'nyx');
     await ensureSession();
+    // 换新 session 后重连 WS（旧连接推送已无意义）
+    if (ws) { try { ws.close(); } catch (e) {} }
+    ws = null; wsFailed = false;
+    connectWS();
   }
 
   document.getElementById('newChat').onclick = () => {
@@ -175,8 +228,28 @@
     resetSession();
   };
 
-  // --- 主动关心轮询（使用当前 session_id） ---
+  // --- 主动关心：WebSocket 实时推送（断线时回退到轮询） ---
+  let ws = null;
+  let wsFailed = false;
+
+  function connectWS() {
+    if (!sessionId || wsFailed) return;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = proto + '://' + location.host + '/ws?session_id=' + encodeURIComponent(sessionId);
+    try { ws = new WebSocket(url); } catch (e) { wsFailed = true; return; }
+    ws.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        if (d.type === 'care' && d.message) addBubble(d.message, 'nyx');
+      } catch (e) {}
+    };
+    ws.onclose = () => { ws = null; wsFailed = true; };
+    ws.onerror = () => { wsFailed = true; };
+  }
+
   async function checkProactiveCare() {
+    // WS 已连接时由服务端推送，跳过轮询避免重复
+    if (ws && ws.readyState === WebSocket.OPEN) return;
     if (!sessionId) await ensureSession();
     try {
       const resp = await fetch('/api/care?session_id=' + encodeURIComponent(sessionId));
@@ -186,11 +259,110 @@
       }
     } catch (e) { /* 静默 */ }
   }
-  // 页面加载 3 秒后首次检查（首次问候），之后每 5 分钟轮询
-  setTimeout(() => {
-    checkProactiveCare();
-    setInterval(checkProactiveCare, 5 * 60 * 1000);
-  }, 3000);
+
+  // --- 历史恢复：刷新页面后从服务端拉回会话历史 ---
+  async function loadHistory() {
+    if (!sessionId) return;
+    try {
+      const resp = await fetch('/api/session/' + encodeURIComponent(sessionId) + '/history');
+      const d = await resp.json();
+      const msgs = d.messages || [];
+      if (!msgs.length) return;
+      chat.innerHTML = '';
+      for (const m of msgs) {
+        addBubble(m.content, m.role === 'user' ? 'me' : 'nyx');
+        if (m.role === 'user') setEmotion(m.emotion);
+      }
+    } catch (e) { /* 静默 */ }
+  }
+
+  // --- 记忆面板：查看 / 删除 Nyx 的记忆 ---
+  const memPanel = document.getElementById('memoryPanel');
+  const memList = document.getElementById('memoryList');
+  const memFoot = document.getElementById('memoryFoot');
+
+  async function refreshMemory() {
+    memList.innerHTML = '<div class="mem-empty">正在读取记忆…</div>';
+    memFoot.textContent = '';
+    try {
+      const resp = await fetch('/api/memory?limit=50');
+      const d = await resp.json();
+      const mems = d.memories || [];
+      if (d.enabled === false) {
+        memList.innerHTML = '<div class="mem-empty">记忆系统未启用（演示模式）</div>';
+        return;
+      }
+      if (d.ok === false) {
+        memList.innerHTML = '<div class="mem-empty">' + (d.error || '读取失败') + '</div>';
+        return;
+      }
+      if (!mems.length) {
+        memList.innerHTML = '<div class="mem-empty">还没有记忆呢~ 多跟小夜聊聊吧</div>';
+        return;
+      }
+      memList.innerHTML = '';
+      mems.forEach(m => {
+        const row = document.createElement('div');
+        row.className = 'mem-item';
+        const info = document.createElement('div');
+        info.className = 'mem-info';
+        const content = document.createElement('div');
+        content.className = 'mem-content';
+        content.textContent = m.content;
+        const meta = document.createElement('div');
+        meta.className = 'mem-meta';
+        const t = m.timestamp ? new Date(m.timestamp).toLocaleString() : '';
+        const tag = m.mem_type || (m.tags && m.tags[0]) || '';
+        meta.textContent = (t ? t : '') + (tag ? ' · ' + tag : '');
+        info.appendChild(content);
+        info.appendChild(meta);
+        const del = document.createElement('button');
+        del.className = 'mem-del';
+        del.textContent = '忘掉';
+        del.title = '删除这条记忆';
+        del.onclick = async () => {
+          try {
+            const resp = await fetch('/api/memory/' + encodeURIComponent(m.id), { method: 'DELETE' });
+            const r = await resp.json();
+            if (r.ok) {
+              row.remove();
+              if (!memList.children.length) {
+                memList.innerHTML = '<div class="mem-empty">还没有记忆呢~ 多跟小夜聊聊吧</div>';
+              }
+            } else {
+              memFoot.textContent = r.error || '删除失败';
+            }
+          } catch (e) {
+            memFoot.textContent = '删除失败';
+          }
+        };
+        row.appendChild(info);
+        row.appendChild(del);
+        memList.appendChild(row);
+      });
+    } catch (e) {
+      memList.innerHTML = '<div class="mem-empty">读取失败</div>';
+    }
+  }
+
+  document.getElementById('memBtn').onclick = () => {
+    memPanel.classList.add('open');
+    refreshMemory();
+  };
+  document.getElementById('memClose').onclick = () => memPanel.classList.remove('open');
+  memPanel.addEventListener('click', (e) => { if (e.target === memPanel) memPanel.classList.remove('open'); });
+
+  // --- 页面初始化：恢复历史 → 连接 WS → 轮询兜底 ---
+  (async () => {
+    await ensureSession();
+    await loadHistory();
+    connectWS();
+    // 首次问候：WS 未连通时 3 秒后轮询一次，之后每 5 分钟兜底
+    setTimeout(() => {
+      checkProactiveCare();
+      setInterval(checkProactiveCare, 5 * 60 * 1000);
+    }, 3000);
+  })();
 
   function addBubble(text, who) {
     const b = document.createElement('div');

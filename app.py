@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
-"""Cyber Nyx — FastAPI 拟人助手服务（v0.6：会话历史持久化）
+"""Cyber Nyx — FastAPI 拟人助手服务（v0.7：历史恢复 + 记忆面板 + WS 推送）
 
 启动：
     python app.py                                  # 演示模式
@@ -10,10 +10,12 @@
 访问： http://127.0.0.1:8000
 """
 
+import asyncio
 import json
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -27,7 +29,6 @@ from proactive import ProactiveCare
 from session import SessionManager
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="Cyber Nyx", version="0.6.0")
 
 nyx = NyxAgent(str(BASE / "personas" / "nyx.json"))
 LLM_ON = nyx_llm.available()
@@ -59,6 +60,59 @@ sessions = SessionManager(
     ttl=3600,
     memory_store=memory if MEM_ENABLED else None,
 )
+
+
+# --- WebSocket 连接管理（主动关心实时推送） ---
+class CareWSManager:
+    """session_id → WebSocket 映射，后台任务用 WS 推送关心消息。"""
+
+    def __init__(self):
+        self.connections: dict[str, WebSocket] = {}
+
+    async def connect(self, session_id: str, ws: WebSocket):
+        await ws.accept()
+        self.connections[session_id] = ws
+
+    def disconnect(self, session_id: str):
+        self.connections.pop(session_id, None)
+
+    def active(self) -> list[str]:
+        return list(self.connections.keys())
+
+    async def push_care(self, session_id: str, message: str) -> bool:
+        ws = self.connections.get(session_id)
+        if ws is None:
+            return False
+        try:
+            await ws.send_json({"type": "care", "message": message})
+            return True
+        except Exception:
+            self.disconnect(session_id)
+            return False
+
+
+ws_manager = CareWSManager()
+
+
+async def _care_loop():
+    """后台任务：每 30 秒检查活跃 WS 会话，触发主动关心并推送。"""
+    while True:
+        await asyncio.sleep(30)
+        for sid in ws_manager.active():
+            with suppress(Exception):
+                msg = proactive.check_and_notify(sid)
+                if msg:
+                    await ws_manager.push_care(sid, msg)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    task = asyncio.create_task(_care_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Cyber Nyx", version="0.7.0", lifespan=lifespan)
 
 SYSTEM_PROMPT = (
     f"你叫{nyx.display}（{nyx.title}），现在是深夜陪伴时刻。"
@@ -114,10 +168,12 @@ def session_delete(session_id: str):
 
 @app.get("/api/session/{session_id}/history")
 def session_history(session_id: str):
-    """返回会话历史（供前端恢复上下文 / 调试）。"""
-    session = sessions.get(session_id)
-    if not session:
-        return JSONResponse({"messages": []})
+    """返回会话历史（供前端恢复上下文 / 调试）。
+
+    用 get_or_create 触发记忆恢复：服务重启后同一 session_id
+    也能从 universal-agent-memory 拉回历史，前端刷新不再丢。
+    """
+    session = sessions.get_or_create(session_id)
     msgs = [
         {
             "role": m.role,
@@ -128,6 +184,66 @@ def session_history(session_id: str):
         for m in session.messages
     ]
     return JSONResponse({"session_id": session_id, "messages": msgs})
+
+
+# --- 记忆可视化 / 管理 ---
+
+
+@app.get("/api/memory")
+def memory_list(limit: int = 30):
+    """列出最近记忆（前端记忆面板）。"""
+    if not MEM_ENABLED:
+        return JSONResponse({"ok": True, "memories": [], "enabled": False})
+    try:
+        items = memory.list_recent(limit=min(limit, 100))
+        return JSONResponse({"ok": True, "memories": items, "enabled": True})
+    except Exception:
+        return JSONResponse(
+            {"ok": False, "memories": [], "enabled": True, "error": "记忆读取失败"}
+        )
+
+
+@app.delete("/api/memory/{memory_id}")
+def memory_delete(memory_id: str):
+    """删除一条记忆（按 id 反查内容，以完整内容为关键词删除）。"""
+    if not MEM_ENABLED:
+        return JSONResponse({"ok": False, "error": "记忆系统未启用"})
+    try:
+        items = memory.list_recent(limit=100)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "记忆读取失败"})
+    target = next((m for m in items if m["id"] == memory_id), None)
+    if not target:
+        return JSONResponse({"ok": False, "error": "未找到该记忆"})
+    try:
+        ok = memory.forget(target["content"])
+    except Exception:
+        ok = False
+    return JSONResponse({"ok": ok, "deleted": target["content"][:40]})
+
+
+# --- WebSocket：主动关心实时推送 ---
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket):
+    """WebSocket 长连接：Nyx 主动关心通过 WS 实时推送。
+
+    前端连接：ws://host/ws?session_id=xxx
+    服务端推送：{"type": "care", "message": "..."}
+    """
+    session_id = websocket.query_params.get("session_id", "")
+    if not session_id:
+        await websocket.close(code=4400)
+        return
+    await ws_manager.connect(session_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # 保持连接（客户端心跳/忽略消息）
+    except WebSocketDisconnect:
+        ws_manager.disconnect(session_id)
+    except Exception:
+        ws_manager.disconnect(session_id)
 
 
 @app.post("/api/chat")
@@ -393,7 +509,7 @@ def status():
         "memory": "universal-agent-memory" if MEM_ENABLED else "none",
         "persona": nyx.persona["name"],
         "mode": nyx.mode,
-        "version": "0.6.0",
+        "version": app.version,
     }
 
 

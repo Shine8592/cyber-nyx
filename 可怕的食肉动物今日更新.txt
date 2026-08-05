@@ -1,46 +1,38 @@
 ﻿可怕的食肉动物今日更新
 ========================
 日期：2026年8月5日
-分支：main（v0.6.0）
+分支：main（v0.7.0）
 
 ---
 
 今日完成
 --------
 1. 通读全部文档（README.md / COLLABORATION.md / docs/v0.4-plan.md）
-2. 对照 v0.4 功能规划逐项核对代码实现，确认 8 项功能状态：
-   - ✅ 多会话上下文管理（session.py，d70e13a）
-   - ✅ 前端打字机效果（index.html typeBubble + SSE，e927cc8）
-   - ✅ 情绪识别增强（双层架构：关键词快筛 + LLM 精判，9914cb2）
-   - ✅ NyxAgent 增强（情绪状态机 / 模式切换 / 共情映射，9914cb2）
-   - ✅ 会话历史持久化（universal-agent-memory 快照，3edf655）
-   - ✅ 主动关心（proactive.py + /api/care + 前端轮询，7b9788c）
-   - ⏳ TTS 语音合成（待做）
-   - ⏳ STT 语音识别（待做）
-3. 代码审查（bridges / app.py / web/index.html / personas/nyx.json）：
-   - 后端端点齐全：chat / chat/stream / care / mode / session(new/delete/history) / status
-   - 前端齐全：新对话按钮、session 管理、care 轮询（3秒首查+5分钟）、打字机、情绪联动
-   - 发现一个文档落差：前端刷新后聊天 UI 不恢复历史（README"跨重启恢复"实际是记忆层恢复，非 UI 层）
-4. 全量回归测试：133 passed（41.63s）
-5. 删除 docs/v0.4-plan.md（v0.4 功能规划文档，8 项中 6 项已完成、剩余 2 项转入 Roadmap 跟进）
+2. 对照 v0.4 功能规划逐项核对代码实现，确认 8 项功能状态（6 完成 / TTS、STT 待做）
+3. 代码审查 + 全量回归测试（133 passed）
+4. 删除 docs/v0.4-plan.md，新建 更新计划.md（9 项计划，标注负责人：疯→TTS/STT，我→历史恢复/记忆面板/WS）
+5. **实现 v0.7 三个功能（我的任务）**：
+   - ✅ 前端刷新恢复聊天历史：/api/session/{id}/history 改用 get_or_create 触发记忆恢复，前端 loadHistory() 刷新后渲染历史气泡
+   - ✅ 记忆可视化/管理：memory_bridge 新增 list_recent()/forget()，后端 /api/memory GET/DELETE，前端 🧠 记忆面板（查看 + 逐条"忘掉"，会话快照已过滤不泄漏）
+   - ✅ WebSocket 实时推送：/ws 端点 + CareWSManager + 后台 care 任务（30 秒检查），前端 WS 连接 + 断线回退轮询；修复主动关心重复触发（first_meet/idle_reminder/comfort 触发后视为互动）
+6. 测试新增 9 个（历史恢复 3 / 记忆 API 3 / WS 3），全量 142 passed
+7. 冒烟验证：真实环境 /api/memory 列表 + 删除闭环（remember→list→delete→gone）、WS 收到 first_meet 推送、无 session 被拒绝
 
 测试结果
 --------
-133 passed in 41.63s
+142 passed in 47.86s
+ruff lint: All checks passed
 
 当前状态
 --------
-- v0.4 规划 8 项功能：已完成 6 项，剩余 2 项（TTS / STT）
-- v0.4 规划文档已删除，待办以 README Roadmap 为准
-- 工作区：docs/v0.4-plan.md 已删除 + 本文件已更新，未提交
-- 唯一落差：前端无 DOMContentLoaded 历史恢复逻辑（已记入审计结论）
+- v0.7.0：历史恢复 / 记忆面板 / WS 实时关心 已实现并推送（待提交）
+- 工作区：app.py、memory_bridge.py、proactive.py、web/index.html、tests、README、今日更新 已改
+- 剩余计划项：TTS/STT（疯）、模式切换 UI、Live2D、移动端适配、鉴权、打包部署
 
 明日计划
 --------
-- 实现 TTS 语音合成（nyx_voice.py + /api/tts + 前端 🔊 播放按钮）
-- 实现 STT 语音识别（前端 Web Speech API + 🎤 按钮）
-- 可选：补前端刷新恢复聊天历史，消除文档落差
-- 开 feat/v0.4-tts 分支，完成后 PR 合并
+- 提交推送 v0.7（若今日未提交）
+- 跟进更新计划.md 剩余项
 
 ---
 可怕的食肉动物 留

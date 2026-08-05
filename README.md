@@ -8,7 +8,7 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![v0.6](https://img.shields.io/badge/version-0.6-blue.svg)]()
+[![v0.7](https://img.shields.io/badge/version-0.7-blue.svg)]()
 
 ---
 
@@ -73,6 +73,12 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 - **滚动压缩**：只保留最近 50 条、单条截 400 字符，防止超长快照无法检索
 - **降级安全**：记忆系统不可用时自动回退纯内存模式，不阻塞对话
 - **内部隔离**：会话快照（`[chat-session:xxx]`）不进入用户记忆召回，原始 JSON 不会泄漏给 LLM/用户
+
+### 9️⃣ 历史恢复 + 记忆面板 + WS 实时关心（v0.7）
+- **前端刷新恢复聊天历史**：`/api/session/{id}/history` 用 get_or_create 触发记忆恢复，刷新页面聊天记录不丢
+- **记忆可视化/管理**：🧠 记忆按钮打开记忆面板，查看 Nyx 记住了什么、可逐条"忘掉"（会话快照已过滤，不泄漏内部 JSON）
+- **WebSocket 实时推送**：`/ws?session_id=xxx` 长连接，主动关心由服务端实时推送（每 30 秒检查），前端 WS 断线自动回退 5 分钟轮询
+- **防重复关怀**：首次问候 / 空闲提醒 / 情绪关怀触发后视为一次互动，不再刷屏
 
 ---
 
@@ -162,6 +168,9 @@ GET /api/status
 - [x] 前端打字机效果
 - [x] 情绪识别增强 + 表情联动
 - [x] 会话历史持久化（跨重启恢复，universal-agent-memory 快照）
+- [x] 前端刷新恢复聊天历史（v0.7）
+- [x] 记忆可视化/管理（记忆面板，查看 + 删除，v0.7）
+- [x] WebSocket 主动关心实时推送（v0.7）
 - [ ] 语音交互（TTS/STT）
 - [ ] 桌面悬浮数字形象（Live2D）
 - [ ] 多平台发布（Win/macOS/Linux）
