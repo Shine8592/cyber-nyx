@@ -27,8 +27,6 @@ from bridges.agent_core import NoCore
 from bridges.hermes_adapter import HermesCore
 from bridges.memory_bridge import MCPMemoryStore, NullMemoryStore
 from emotion import infer_emotion as _infer_emotion
-from missqiu import draw as missqiu_draw
-from missqiu import vision as missqiu_vision
 from nyx import NyxAgent
 from proactive import ProactiveCare
 from session import SessionManager
@@ -223,13 +221,6 @@ def settings_get():
                 "online": core.name == "hermes",
             },
             "memory": {"enabled": MEM_ENABLED},
-            "missqiu": {
-                "apikey": app_settings.mask_key(cfg["missqiu"]["apikey"]),
-                "proxies": cfg["missqiu"]["proxies"],
-                "style": cfg["missqiu"]["style"],
-                "ratio": cfg["missqiu"]["ratio"],
-                "configured": bool(cfg["missqiu"]["apikey"] and cfg["missqiu"]["proxies"]),
-            },
             "version": "0.7.0",
         }
     )
@@ -244,16 +235,11 @@ def settings_set(body: dict):
     global core, LLM_ON, CORE_ENABLED
     llm = (body or {}).get("llm") or {}
     hermes = (body or {}).get("hermes") or {}
-    missqiu_cfg = (body or {}).get("missqiu") or {}
 
     cur = app_settings.load()
     key_val = (llm.get("key") or "").strip()
     if not key_val or "..." in key_val:
         key_val = cur["llm"]["key"]  # 未修改，保留原密钥
-
-    mq_key = (missqiu_cfg.get("apikey") or "").strip()
-    if not mq_key or "..." in mq_key:
-        mq_key = cur["missqiu"]["apikey"]
 
     cfg = {
         "llm": {
@@ -265,12 +251,6 @@ def settings_set(body: dict):
             "bin": (hermes.get("bin") or "").strip(),
             "model": (hermes.get("model") or "").strip(),
             "provider": (hermes.get("provider") or "").strip(),
-        },
-        "missqiu": {
-            "apikey": mq_key,
-            "proxies": (missqiu_cfg.get("proxies") or "").strip(),
-            "style": (missqiu_cfg.get("style") or "").strip() or "动画",
-            "ratio": (missqiu_cfg.get("ratio") or "").strip() or "1:1",
         },
     }
     app_settings.save(cfg)
@@ -398,16 +378,6 @@ def chat(body: ChatIn):
     msg = body.message.strip()
     if not msg:
         return JSONResponse({"reply": "嗯？主人没有说话呢~", "emotion": "neutral"})
-
-    # 0.5) missqiu 命令：/draw 绘图 / /see 识图
-    cmd = _handle_missqiu_command(msg)
-    if cmd is not None:
-        session = sessions.get_or_create(body.session_id)
-        session.add("user", msg, emotion="neutral")
-        session.add("assistant", cmd["reply"])
-        sessions.persist(session)
-        proactive.touch(session_id=session.id, emotion="neutral")
-        return JSONResponse(cmd)
 
     # 0) 会话管理：获取或创建会话
     session = sessions.get_or_create(body.session_id)
@@ -642,80 +612,6 @@ def chat_stream(body: ChatIn):
         )
 
     return StreamingResponse(generate(), media_type="text/event-stream")
-
-
-def _missqiu_cfg() -> tuple:
-    """返回 (apikey, proxies_list, style, ratio)。"""
-    c = app_settings.load()["missqiu"]
-    proxies = [p.strip() for p in c["proxies"].replace("\n", ",").split(",") if p.strip()]
-    return c["apikey"], proxies, c["style"] or "动画", c["ratio"] or "1:1"
-
-
-@app.get("/api/missqiu/status")
-def missqiu_status():
-    """探测 missqiu 代理可用性（供设置面板显示）。"""
-    from missqiu import probe_proxies
-    _, proxies, _, _ = _missqiu_cfg()
-    if not proxies:
-        return JSONResponse({"configured": False, "proxies": [], "available": []})
-    ok = probe_proxies(proxies, force=True)
-    return JSONResponse({"configured": True, "proxies": proxies, "available": ok})
-
-
-def _handle_missqiu_command(msg: str) -> dict | None:
-    """处理 /draw 与 /see 聊天命令。返回聊天响应 dict 或 None（非命令）。"""
-    apikey, proxies, default_style, default_ratio = _missqiu_cfg()
-
-    if msg.startswith("/draw"):
-        text = msg[len("/draw"):].strip()
-        if not text:
-            return {
-                "reply": "画什么呀？给我点描述，比如：`/draw 月亮女神头像，弯月，夜空`",
-                "emotion": "neutral",
-            }
-        if not apikey or not proxies:
-            return {
-                "reply": "绘图还没接通呢——在设置里填好 missqiu API Key 和国内代理就能用了。",
-                "emotion": "neutral",
-            }
-        result = missqiu_draw(text, default_style, default_ratio, apikey, proxies)
-        if result.get("error"):
-            msg_err = result["error"].get("message") or result["error"].get("code") or "未知错误"
-            return {"reply": f"唔，画失败了（{msg_err}）…", "emotion": "neutral"}
-        urls = result.get("image_url") or []
-        if not urls:
-            return {"reply": "唔，画好了但没有图回来…", "emotion": "neutral"}
-        return {
-            "reply": f"画好啦，{len(urls)} 张 {default_ratio} 的{default_style}图~",
-            "images": urls,
-            "emotion": "neutral",
-        }
-
-    if msg.startswith("/see"):
-        url = msg[len("/see"):].strip()
-        if not url or not url.startswith("http"):
-            return {
-                "reply": "把图片链接给我呀，比如：`/see https://example.com/a.jpg`",
-                "emotion": "neutral",
-            }
-        if not apikey or not proxies:
-            return {
-                "reply": "识图还没接通呢——在设置里填好 missqiu API Key 和国内代理就能用了。",
-                "emotion": "neutral",
-            }
-        result = missqiu_vision("请详细描述这张图片", url, 1, apikey, proxies)
-        if result.get("error"):
-            msg_err = result["error"].get("message") or result["error"].get("code") or "未知错误"
-            return {"reply": f"唔，图片看不清楚（{msg_err}）…", "emotion": "neutral"}
-        choices = result.get("choices") or []
-        if not choices:
-            return {"reply": "唔，看到了但说不出话来…", "emotion": "neutral"}
-        desc = choices[0].get("message", {}).get("content", "").strip()
-        if not desc:
-            desc = choices[0].get("message", {}).get("reasoning_content", "").strip()
-        return {"reply": f"我看到啦：\n\n{desc}", "emotion": "neutral"}
-
-    return None
 
 
 @app.get("/api/care")

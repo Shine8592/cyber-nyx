@@ -19,7 +19,6 @@ CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 DEFAULTS = {
     "llm": {"base": "", "key": "", "model": "gpt-4o-mini"},
     "hermes": {"bin": "", "model": "", "provider": ""},
-    "missqiu": {"apikey": "", "proxies": "", "style": "动画", "ratio": "1:1"},
     "auth": {"token": ""},
 }
 
@@ -30,10 +29,6 @@ ENV_MAP = {
     ("hermes", "bin"): "NYX_HERMES_BIN",
     ("hermes", "model"): "NYX_HERMES_MODEL",
     ("hermes", "provider"): "NYX_HERMES_PROVIDER",
-    ("missqiu", "apikey"): "NYX_MISSQIU_KEY",
-    ("missqiu", "proxies"): "NYX_MISSQIU_PROXIES",
-    ("missqiu", "style"): "NYX_MISSQIU_STYLE",
-    ("missqiu", "ratio"): "NYX_MISSQIU_RATIO",
     ("auth", "token"): "NYX_AUTH_TOKEN",
 }
 
