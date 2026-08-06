@@ -111,6 +111,8 @@ python app.py
 
 > 🔌 **接入 LLM / Hermes 内核**：打开页面右上角 ⚙️ 设置，填入 API 地址与密钥即可接入 LLM（保存即生效，无需重启）；Hermes 内核需要运行用户有 CLI 执行权限，命令清单见 [docs/hermes-setup.md](docs/hermes-setup.md)。
 
+> 🔑 **访问令牌（鉴权）**：启动时自动生成 `nyx-...` 令牌（写入 `config.json` 并在日志打印），所有 `/api/*` 需要 `Authorization: Bearer <token>`；首次打开页面会要求输入令牌（浏览器记住）。测试环境用 `NYX_AUTH_DISABLE=1` 关闭，自定义令牌用环境变量 `NYX_AUTH_TOKEN` 或 `config.json` 的 `auth.token`。
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |
