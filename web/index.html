@@ -329,6 +329,30 @@
   .settings-msg { text-align:center; font-size:12px; margin-top:10px; min-height:18px; color:var(--text-3); }
   .settings-msg.ok { color:var(--success); }
   .settings-msg.err { color:var(--danger); }
+  .settings-hint { font-size:11px; color:var(--text-3); line-height:1.6; margin-top:4px; }
+  .settings-hint code {
+    background:var(--bg-soft); border:1px solid var(--line); border-radius:5px;
+    padding:1px 5px; color:var(--accent); font-size:11px;
+  }
+  .mini-btn {
+    background:var(--bg-soft); border:1px solid var(--line); color:var(--text-2);
+    border-radius:7px; padding:2px 8px; font-size:11px; cursor:pointer; margin-left:8px;
+    transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+  }
+  .mini-btn:hover { color:var(--accent); border-color:var(--accent-line); }
+
+  /* ===== 绘图结果图片网格 ===== */
+  .img-grid {
+    display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:6px;
+    margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+  }
+  .img-grid a {
+    display:block; border-radius:10px; overflow:hidden;
+    border:1px solid var(--line); background:var(--bg-soft);
+    transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+  }
+  .img-grid a:hover { border-color:var(--accent-line); transform:translateY(-1px); }
+  .img-grid img { display:block; width:100%; height:auto; aspect-ratio:1; object-fit:cover; }
 
   /* ===== 登录（毛玻璃遮罩 + 居中卡片） ===== */
   .login-mask {
@@ -561,6 +585,31 @@
         <label>Provider</label>
         <input id="cfgHermesProvider" placeholder="可选" autocomplete="off">
       </div>
+    </div>
+
+    <div class="settings-sec">
+      <h3>绘图 / 识图（missqiu）</h3>
+      <div class="settings-field">
+        <label>API Key</label>
+        <input id="cfgMqKey" type="password" placeholder="留空 = 不修改" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>国内代理（逗号分隔，多个自动切换）</label>
+        <input id="cfgMqProxies" placeholder="http://ip:port, socks5://ip:port" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>默认风格</label>
+        <input id="cfgMqStyle" placeholder="动画" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>默认比例</label>
+        <input id="cfgMqRatio" placeholder="1:1" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>代理状态 <button class="mini-btn" id="mqProbe" title="重新探测代理">重新探测</button></label>
+        <div class="settings-status" id="mqStatus">未探测</div>
+      </div>
+      <p class="settings-hint">聊天里用 <code>/draw 描述</code> 绘图、<code>/see 图片链接</code> 识图</p>
     </div>
 
     <button class="settings-save" id="setSave">保存并应用</button>
@@ -853,13 +902,34 @@
   const cfgHBin = document.getElementById('cfgHermesBin');
   const cfgHModel = document.getElementById('cfgHermesModel');
   const cfgHProvider = document.getElementById('cfgHermesProvider');
+  const cfgMqKey = document.getElementById('cfgMqKey');
+  const cfgMqProxies = document.getElementById('cfgMqProxies');
+  const cfgMqStyle = document.getElementById('cfgMqStyle');
+  const cfgMqRatio = document.getElementById('cfgMqRatio');
+  const mqStatus = document.getElementById('mqStatus');
 
   function renderSetStatus(d) {
     const llmTxt = d.llm.configured ? '<span class="ok">LLM 已配置</span>' : '<span class="bad">LLM 未配置（本地演示）</span>';
     const hTxt = d.hermes.online ? '<span class="ok">Hermes 内核在线</span>' : '<span class="bad">Hermes 内核离线</span>';
     const mTxt = d.memory.enabled ? '<span class="ok">记忆系统在线</span>' : '<span class="bad">记忆系统离线</span>';
-    setStatus.innerHTML = llmTxt + '<br>' + hTxt + '<br>' + mTxt;
+    const mqTxt = d.missqiu.configured ? '<span class="ok">绘图/识图已配置</span>' : '<span class="bad">绘图/识图未配置</span>';
+    setStatus.innerHTML = llmTxt + '<br>' + hTxt + '<br>' + mTxt + '<br>' + mqTxt;
   }
+
+  function probeMq() {
+    mqStatus.innerHTML = '<span class="bad">探测中…</span>';
+    fetch('/api/missqiu/status').then(r => r.json()).then(d => {
+      if (!d.configured) {
+        mqStatus.innerHTML = '<span class="bad">未配置代理，先保存设置</span>';
+        return;
+      }
+      const n = d.available.length;
+      mqStatus.innerHTML = n
+        ? `<span class="ok">${n}/${d.proxies.length} 个代理可用</span>`
+        : '<span class="bad">0 个代理可用，试试别的源</span>';
+    }).catch(() => { mqStatus.innerHTML = '<span class="bad">探测失败</span>'; });
+  }
+  document.getElementById('mqProbe').onclick = probeMq;
 
   function loadSettings() {
     fetch('/api/settings').then(r => r.json()).then(d => {
@@ -871,6 +941,12 @@
       cfgHBin.value = d.hermes.bin || '';
       cfgHModel.value = d.hermes.model || '';
       cfgHProvider.value = d.hermes.provider || '';
+      cfgMqKey.placeholder = d.missqiu.apikey ? '已保存：' + d.missqiu.apikey + '（留空不修改）' : 'apikey';
+      cfgMqKey.value = '';
+      cfgMqProxies.value = d.missqiu.proxies || '';
+      cfgMqStyle.value = d.missqiu.style || '动画';
+      cfgMqRatio.value = d.missqiu.ratio || '1:1';
+      mqStatus.innerHTML = d.missqiu.configured ? '<span class="ok">已配置</span>' : '<span class="bad">未配置</span>';
     }).catch(() => { setStatus.textContent = '读取配置失败'; });
   }
 
@@ -891,6 +967,12 @@
       body: JSON.stringify({
         llm: { base: cfgBase.value.trim(), key: cfgKey.value.trim(), model: cfgModel.value.trim() },
         hermes: { bin: cfgHBin.value.trim(), model: cfgHModel.value.trim(), provider: cfgHProvider.value.trim() },
+        missqiu: {
+          apikey: cfgMqKey.value.trim(),
+          proxies: cfgMqProxies.value.trim(),
+          style: cfgMqStyle.value.trim(),
+          ratio: cfgMqRatio.value.trim(),
+        },
       }),
     }).then(r => r.json()).then(d => {
       if (d.ok) {
@@ -899,6 +981,8 @@
         renderSetStatus(d);
         cfgKey.value = '';
         cfgKey.placeholder = '已保存（留空不修改）';
+        cfgMqKey.value = '';
+        cfgMqKey.placeholder = '已保存（留空不修改）';
       } else {
         setMsg.className = 'settings-msg err';
         setMsg.textContent = '保存失败';
@@ -964,6 +1048,21 @@
 
   // ============ 打字机效果 ============
   const TYPE_SPEED = 28;
+
+  function addImages(b, urls) {
+    const grid = document.createElement('div');
+    grid.className = 'img-grid';
+    urls.forEach(u => {
+      const a = document.createElement('a');
+      a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = '查看大图';
+      const img = document.createElement('img');
+      img.src = u; img.loading = 'lazy'; img.alt = '绘图结果';
+      img.onerror = () => { img.style.opacity = '0.35'; };
+      a.appendChild(img);
+      grid.appendChild(a);
+    });
+    b.appendChild(grid);
+  }
 
   function typeBubble(text, who, done) {
     const row = document.createElement('div');
@@ -1070,7 +1169,9 @@
         }
         typing.remove();
         setEmotion(d.emotion);
-        setTimeout(() => typeBubble(d.reply, 'nyx'), 250);
+        setTimeout(() => typeBubble(d.reply, 'nyx', (b) => {
+          if (d.images && d.images.length) addImages(b, d.images);
+        }), 250);
       }
     } catch(e) {
       typing.remove();
