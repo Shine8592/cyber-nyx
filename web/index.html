@@ -126,6 +126,12 @@
 
   /* ===== 主区 ===== */
   .main { flex:1; min-width:0; display:flex; flex-direction:column; position:relative; }
+  .main::before {
+    content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:
+      linear-gradient(180deg, rgba(10,10,14,0.45), rgba(10,10,14,0.78) 55%, rgba(10,10,14,0.93)),
+      url('/assets/bg.jpg') center/cover no-repeat;
+  }
   .chat {
     flex:1; overflow-y:auto;
     padding:28px clamp(16px, 5%, 72px) 20px;
@@ -149,8 +155,12 @@
     display:flex; align-items:center; justify-content:center;
     box-shadow: 0 22px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07);
     transition: transform var(--base) var(--ease), filter var(--base) var(--ease);
+    position:relative; overflow:hidden;
   }
-  .avatar svg { width:44px; height:44px; }
+  .avatar img.ai-avatar {
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  }
+  .avatar svg { width:44px; height:44px; position:relative; }
   .avatar.happy { transform: translateY(-3px); }
   .avatar.sad { filter: brightness(.85); }
   .avatar.curious { transform: rotate(-6deg); }
@@ -180,6 +190,7 @@
     display:flex; align-items:center; justify-content:center;
   }
   .mini-avatar svg { width:14px; height:14px; }
+  .mini-avatar img.mini-img { width:100%; height:100%; border-radius:50%; object-fit:cover; display:block; }
   .bubble {
     position:relative;
     max-width:min(72%, 560px);
@@ -329,6 +340,24 @@
   .settings-msg { text-align:center; font-size:12px; margin-top:10px; min-height:18px; color:var(--text-3); }
   .settings-msg.ok { color:var(--success); }
   .settings-msg.err { color:var(--danger); }
+  .settings-hint { font-size:11px; color:var(--text-3); line-height:1.6; margin-top:4px; }
+  .settings-hint code {
+    background:var(--bg-soft); border:1px solid var(--line); border-radius:5px;
+    padding:1px 5px; color:var(--accent); font-size:11px;
+  }
+
+  /* ===== 绘图结果图片网格 ===== */
+  .img-grid {
+    display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:6px;
+    margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+  }
+  .img-grid a {
+    display:block; border-radius:10px; overflow:hidden;
+    border:1px solid var(--line); background:var(--bg-soft);
+    transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+  }
+  .img-grid a:hover { border-color:var(--accent-line); transform:translateY(-1px); }
+  .img-grid img { display:block; width:100%; height:auto; aspect-ratio:1; object-fit:cover; }
 
   /* ===== 登录（毛玻璃遮罩 + 居中卡片） ===== */
   .login-mask {
@@ -476,6 +505,7 @@
 
     <div class="welcome" id="welcome">
       <div class="avatar" id="avatar">
+        <img class="ai-avatar" src="/assets/avatar.jpg" alt="Nyx" onerror="this.remove()">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
           <path d="M16.8 4.4l.7 1.5 1.5.7-1.5.7-.7 1.5-.7-1.5-1.5-.7 1.5-.7z"/>
@@ -561,6 +591,27 @@
         <label>Provider</label>
         <input id="cfgHermesProvider" placeholder="可选" autocomplete="off">
       </div>
+    </div>
+
+    <div class="settings-sec">
+      <h3>生图模型</h3>
+      <div class="settings-field">
+        <label>API 地址（OpenAI 兼容，missqiu 填 baidudraw.php 完整地址）</label>
+        <input id="cfgImgBase" placeholder="https://api.openai.com/v1" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>API Key（留空 = 不修改）</label>
+        <input id="cfgImgKey" type="password" placeholder="sk-..." autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>模型（missqiu 时填风格，如 动画/赛博朋克）</label>
+        <input id="cfgImgModel" placeholder="dall-e-3 或 动画" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>代理（可选，missqiu 需国内代理时填）</label>
+        <input id="cfgImgProxy" placeholder="http://ip:port" autocomplete="off">
+      </div>
+      <p class="settings-hint">聊天里用 <code>/draw 描述</code> 让 Nyx 画图</p>
     </div>
 
     <button class="settings-save" id="setSave">保存并应用</button>
@@ -853,12 +904,17 @@
   const cfgHBin = document.getElementById('cfgHermesBin');
   const cfgHModel = document.getElementById('cfgHermesModel');
   const cfgHProvider = document.getElementById('cfgHermesProvider');
+  const cfgImgBase = document.getElementById('cfgImgBase');
+  const cfgImgKey = document.getElementById('cfgImgKey');
+  const cfgImgModel = document.getElementById('cfgImgModel');
+  const cfgImgProxy = document.getElementById('cfgImgProxy');
 
   function renderSetStatus(d) {
     const llmTxt = d.llm.configured ? '<span class="ok">LLM 已配置</span>' : '<span class="bad">LLM 未配置（本地演示）</span>';
     const hTxt = d.hermes.online ? '<span class="ok">Hermes 内核在线</span>' : '<span class="bad">Hermes 内核离线</span>';
     const mTxt = d.memory.enabled ? '<span class="ok">记忆系统在线</span>' : '<span class="bad">记忆系统离线</span>';
-    setStatus.innerHTML = llmTxt + '<br>' + hTxt + '<br>' + mTxt;
+    const imgTxt = d.image.configured ? '<span class="ok">生图模型已配置</span>' : '<span class="bad">生图模型未配置</span>';
+    setStatus.innerHTML = llmTxt + '<br>' + hTxt + '<br>' + mTxt + '<br>' + imgTxt;
   }
 
   function loadSettings() {
@@ -871,6 +927,11 @@
       cfgHBin.value = d.hermes.bin || '';
       cfgHModel.value = d.hermes.model || '';
       cfgHProvider.value = d.hermes.provider || '';
+      cfgImgBase.value = d.image.base || '';
+      cfgImgKey.placeholder = d.image.key ? '已保存：' + d.image.key + '（留空不修改）' : 'sk-...';
+      cfgImgKey.value = '';
+      cfgImgModel.value = d.image.model || '';
+      cfgImgProxy.value = d.image.proxy || '';
     }).catch(() => { setStatus.textContent = '读取配置失败'; });
   }
 
@@ -891,6 +952,12 @@
       body: JSON.stringify({
         llm: { base: cfgBase.value.trim(), key: cfgKey.value.trim(), model: cfgModel.value.trim() },
         hermes: { bin: cfgHBin.value.trim(), model: cfgHModel.value.trim(), provider: cfgHProvider.value.trim() },
+        image: {
+          base: cfgImgBase.value.trim(),
+          key: cfgImgKey.value.trim(),
+          model: cfgImgModel.value.trim(),
+          proxy: cfgImgProxy.value.trim(),
+        },
       }),
     }).then(r => r.json()).then(d => {
       if (d.ok) {
@@ -899,6 +966,8 @@
         renderSetStatus(d);
         cfgKey.value = '';
         cfgKey.placeholder = '已保存（留空不修改）';
+        cfgImgKey.value = '';
+        cfgImgKey.placeholder = '已保存（留空不修改）';
       } else {
         setMsg.className = 'settings-msg err';
         setMsg.textContent = '保存失败';
@@ -948,7 +1017,7 @@
     if (who === 'nyx') {
       const av = document.createElement('div');
       av.className = 'mini-avatar';
-      av.innerHTML = MOON_SVG;
+      av.innerHTML = '<img class="mini-img" src="/assets/avatar.jpg" alt="" onerror="this.remove()">';
       row.appendChild(av);
     }
     const b = document.createElement('div');
@@ -965,13 +1034,28 @@
   // ============ 打字机效果 ============
   const TYPE_SPEED = 28;
 
+  function addImages(b, urls) {
+    const grid = document.createElement('div');
+    grid.className = 'img-grid';
+    urls.forEach(u => {
+      const a = document.createElement('a');
+      a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = '查看大图';
+      const img = document.createElement('img');
+      img.src = u; img.loading = 'lazy'; img.alt = '绘图结果';
+      img.onerror = () => { img.style.opacity = '0.35'; };
+      a.appendChild(img);
+      grid.appendChild(a);
+    });
+    b.appendChild(grid);
+  }
+
   function typeBubble(text, who, done) {
     const row = document.createElement('div');
     row.className = 'row ' + who + '-row';
     if (who === 'nyx') {
       const av = document.createElement('div');
       av.className = 'mini-avatar';
-      av.innerHTML = MOON_SVG;
+      av.innerHTML = '<img class="mini-img" src="/assets/avatar.jpg" alt="" onerror="this.remove()">';
       row.appendChild(av);
     }
     const b = document.createElement('div');
@@ -1070,7 +1154,9 @@
         }
         typing.remove();
         setEmotion(d.emotion);
-        setTimeout(() => typeBubble(d.reply, 'nyx'), 250);
+        setTimeout(() => typeBubble(d.reply, 'nyx', (b) => {
+          if (d.images && d.images.length) addImages(b, d.images);
+        }), 250);
       }
     } catch(e) {
       typing.remove();

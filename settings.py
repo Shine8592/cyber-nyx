@@ -19,6 +19,7 @@ CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 DEFAULTS = {
     "llm": {"base": "", "key": "", "model": "gpt-4o-mini"},
     "hermes": {"bin": "", "model": "", "provider": ""},
+    "image": {"base": "", "key": "", "model": "", "proxy": ""},
     "auth": {"token": ""},
 }
 
@@ -29,6 +30,10 @@ ENV_MAP = {
     ("hermes", "bin"): "NYX_HERMES_BIN",
     ("hermes", "model"): "NYX_HERMES_MODEL",
     ("hermes", "provider"): "NYX_HERMES_PROVIDER",
+    ("image", "base"): "NYX_IMAGE_BASE",
+    ("image", "key"): "NYX_IMAGE_KEY",
+    ("image", "model"): "NYX_IMAGE_MODEL",
+    ("image", "proxy"): "NYX_IMAGE_PROXY",
     ("auth", "token"): "NYX_AUTH_TOKEN",
 }
 

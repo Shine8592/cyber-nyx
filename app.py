@@ -14,11 +14,13 @@ import asyncio
 import json
 import os
 import secrets
+import urllib.request
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import nyx_llm
@@ -174,6 +176,10 @@ def index():
     return (BASE / "web" / "index.html").read_text(encoding="utf-8")
 
 
+# 静态资源（AI 生成的视觉资产：头像 / 背景）
+app.mount("/assets", StaticFiles(directory=BASE / "web" / "assets"), name="assets")
+
+
 # --- 会话管理端点 ---
 
 
@@ -221,6 +227,13 @@ def settings_get():
                 "online": core.name == "hermes",
             },
             "memory": {"enabled": MEM_ENABLED},
+            "image": {
+                "base": cfg["image"]["base"],
+                "key": app_settings.mask_key(cfg["image"]["key"]),
+                "model": cfg["image"]["model"],
+                "proxy": cfg["image"]["proxy"],
+                "configured": bool(cfg["image"]["base"] and cfg["image"]["key"]),
+            },
             "version": "0.7.0",
         }
     )
@@ -235,11 +248,16 @@ def settings_set(body: dict):
     global core, LLM_ON, CORE_ENABLED
     llm = (body or {}).get("llm") or {}
     hermes = (body or {}).get("hermes") or {}
+    image_cfg = (body or {}).get("image") or {}
 
     cur = app_settings.load()
     key_val = (llm.get("key") or "").strip()
     if not key_val or "..." in key_val:
         key_val = cur["llm"]["key"]  # 未修改，保留原密钥
+
+    img_key = (image_cfg.get("key") or "").strip()
+    if not img_key or "..." in img_key:
+        img_key = cur["image"]["key"]
 
     cfg = {
         "llm": {
@@ -251,6 +269,12 @@ def settings_set(body: dict):
             "bin": (hermes.get("bin") or "").strip(),
             "model": (hermes.get("model") or "").strip(),
             "provider": (hermes.get("provider") or "").strip(),
+        },
+        "image": {
+            "base": (image_cfg.get("base") or "").strip(),
+            "key": img_key,
+            "model": (image_cfg.get("model") or "").strip(),
+            "proxy": (image_cfg.get("proxy") or "").strip(),
         },
     }
     app_settings.save(cfg)
@@ -373,11 +397,131 @@ async def ws_endpoint(websocket: WebSocket):
         ws_manager.disconnect(session_id)
 
 
+class ImageIn(BaseModel):
+    prompt: str
+    n: int = 1
+    size: str = "1024x1024"
+
+
+def _http_open(url: str, data: bytes | None = None, headers: dict | None = None, proxy: str = "", timeout: int = 150):
+    """HTTP 请求（可选走代理）。"""
+    handlers = []
+    if proxy:
+        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    opener = urllib.request.build_opener(*handlers)
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method="POST" if data is not None else "GET")
+    with opener.open(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def image_generate(prompt: str, n: int = 1, size: str = "1024x1024") -> dict:
+    """调用生图模型（标准 OpenAI 兼容格式；missqiu baidraw 自动适配）。
+
+    配置（设置面板「生图模型」）：
+        base   API 地址，如 https://api.openai.com/v1 或 https://missqiu.icu/API/baidudraw.php
+        key    API Key（missqiu 时为 apikey）
+        model  模型名（missqiu 时为风格，如 动画/赛博朋克）
+        proxy  可选代理（missqiu 需国内代理时填写）
+    """
+    cfg = app_settings.load()["image"]
+    base = cfg["base"].strip().rstrip("/")
+    key = cfg["key"].strip()
+    model = cfg["model"].strip()
+    proxy = cfg.get("proxy", "").strip()
+
+    if not base or not key:
+        return {"error": "未配置生图模型，请在设置中填写"}
+
+    # --- missqiu baidudraw 适配 ---
+    if "missqiu" in base or "baidudraw" in base:
+        import urllib.parse as _up
+        params = {
+            "text": prompt,
+            "style": model or "动画",
+            "ratio": "1:1",
+            "apikey": key,
+        }
+        url = base + ("&" if "?" in base else "?") + _up.urlencode(params)
+        try:
+            raw = _http_open(url, proxy=proxy)
+            data = json.loads(raw.decode("utf-8", "ignore"))
+        except Exception as e:
+            return {"error": f"生图请求失败: {e}"}
+        if data.get("error"):
+            msg = data["error"].get("message") or data["error"].get("code") or "未知错误"
+            return {"error": f"生图失败: {msg}"}
+        urls = data.get("image_url") or []
+        return {"images": urls, "provider": "missqiu"}
+
+    # --- 标准 OpenAI 兼容 images/generations ---
+    body = {"model": model or "dall-e-3", "prompt": prompt, "n": n, "size": size}
+    try:
+        raw = _http_open(
+            f"{base}/images/generations",
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            proxy=proxy,
+        )
+        data = json.loads(raw.decode("utf-8", "ignore"))
+    except Exception as e:
+        return {"error": f"生图请求失败: {e}"}
+    if "error" in data:
+        msg = data["error"].get("message") or data["error"].get("code") or "未知错误"
+        return {"error": f"生图失败: {msg}"}
+    urls = []
+    for item in (data.get("data") or []):
+        if item.get("url"):
+            urls.append(item["url"])
+        elif item.get("b64_json"):
+            urls.append("data:image/png;base64," + item["b64_json"])
+    if not urls:
+        return {"error": "生图模型没有返回图片"}
+    return {"images": urls, "provider": "openai"}
+
+
+@app.post("/api/image")
+def image_api(body: ImageIn):
+    """生图端点：POST /api/image {prompt, n, size} → {images: [url]}"""
+    if not body.prompt.strip():
+        return JSONResponse({"error": "描述不能为空"}, status_code=400)
+    result = image_generate(body.prompt.strip(), body.n, body.size)
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=502)
+    return JSONResponse({"images": result["images"], "provider": result.get("provider", "")})
+
+
 @app.post("/api/chat")
 def chat(body: ChatIn):
     msg = body.message.strip()
     if not msg:
         return JSONResponse({"reply": "嗯？主人没有说话呢~", "emotion": "neutral"})
+
+    # 0.5) 生图命令：/draw 描述
+    if msg.startswith("/draw"):
+        text = msg[len("/draw"):].strip()
+        if not text:
+            return JSONResponse({
+                "reply": "画什么呀？给我点描述，比如：`/draw 月亮女神头像，弯月，夜空`",
+                "emotion": "neutral",
+            })
+        session = sessions.get_or_create(body.session_id)
+        session.add("user", msg, emotion="neutral")
+        result = image_generate(text)
+        if result.get("error"):
+            reply = f"唔，画失败了（{result['error']}）…"
+            session.add("assistant", reply)
+            sessions.persist(session)
+            proactive.touch(session_id=session.id, emotion="neutral")
+            return JSONResponse({"reply": reply, "emotion": "neutral"})
+        urls = result.get("images") or []
+        reply = f"画好啦，{len(urls)} 张图~ 想看什么样的再跟我说~"
+        session.add("assistant", reply)
+        sessions.persist(session)
+        proactive.touch(session_id=session.id, emotion="neutral")
+        return JSONResponse({"reply": reply, "images": urls, "emotion": "neutral"})
 
     # 0) 会话管理：获取或创建会话
     session = sessions.get_or_create(body.session_id)
