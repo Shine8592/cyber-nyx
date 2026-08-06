@@ -661,9 +661,11 @@
   async function doLogin() {
     const t = loginInput.value.trim();
     if (!t) { loginErr.textContent = '请输入访问令牌'; return; }
-    // 先用该令牌探测一个受保护接口
+    // 用原始 fetch 显式携带刚输入的令牌探测（不走封装，避免带旧 token）
     try {
-      const resp = await fetch('/api/status');
+      const resp = await _fetch('/api/status', {
+        headers: { 'Authorization': 'Bearer ' + t }
+      });
       if (resp.status === 401) { loginErr.textContent = '令牌无效，请检查后重试'; return; }
       localStorage.setItem(AUTH_KEY, t);
       location.reload();
