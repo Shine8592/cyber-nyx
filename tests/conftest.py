@@ -10,6 +10,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# 必须在 import app 之前设置：app.py 在 import 时读取鉴权开关并可能生成 token
+os.environ["NYX_AUTH_DISABLE"] = "1"
+
 
 @pytest.fixture(autouse=True)
 def clear_env():
@@ -27,8 +30,10 @@ def clear_env():
         "MEMORY_STORE",
         "MEMORY_PROJECT_ROOT",
         "MEMORY_GLOBAL_DIR",
+        "NYX_AUTH_TOKEN",
     ]:
         os.environ.pop(key, None)
+    os.environ["NYX_AUTH_DISABLE"] = "1"  # 测试环境关闭鉴权
     yield
     for key in [
         "NYX_API_BASE",
@@ -43,5 +48,7 @@ def clear_env():
         "MEMORY_STORE",
         "MEMORY_PROJECT_ROOT",
         "MEMORY_GLOBAL_DIR",
+        "NYX_AUTH_TOKEN",
+        "NYX_AUTH_DISABLE",
     ]:
         os.environ.pop(key, None)

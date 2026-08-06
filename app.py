@@ -12,6 +12,8 @@
 
 import asyncio
 import json
+import os
+import secrets
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -33,6 +35,27 @@ BASE = Path(__file__).resolve().parent
 
 # 启动时加载 config.json → 环境变量（环境变量优先，不覆盖）
 app_settings.load_to_env()
+
+# --- 鉴权：访问令牌（NYX_AUTH_DISABLE=1 可关闭，测试用） ---
+AUTH_DISABLED = os.environ.get("NYX_AUTH_DISABLE", "0") == "1"
+
+
+def _ensure_auth_token() -> str:
+    """未配置令牌时自动生成随机 token，写入 config.json 并在日志打印。"""
+    tok = os.environ.get("NYX_AUTH_TOKEN", "")
+    if not tok:
+        tok = app_settings.load().get("auth", {}).get("token", "")
+    if not tok:
+        tok = "nyx-" + secrets.token_urlsafe(24)
+        cfg = app_settings.load()
+        cfg.setdefault("auth", {})["token"] = tok
+        app_settings.save(cfg)
+        os.environ["NYX_AUTH_TOKEN"] = tok
+        print(f"🔑 访问令牌（请转发给使用者）：{tok}")
+    return tok
+
+
+AUTH_TOKEN = "" if AUTH_DISABLED else _ensure_auth_token()
 
 nyx = NyxAgent(str(BASE / "personas" / "nyx.json"))
 LLM_ON = nyx_llm.available()
@@ -117,6 +140,18 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Cyber Nyx", version="0.7.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def auth_middleware(request, call_next):
+    """鉴权：/api/* 需要 Authorization: Bearer <token>（除 /api/settings 外统一保护）。"""
+    if not AUTH_DISABLED and request.url.path.startswith("/api/"):
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            auth = auth[7:]
+        if auth != AUTH_TOKEN:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
 
 SYSTEM_PROMPT = (
     f"你叫{nyx.display}（{nyx.title}），现在是深夜陪伴时刻。"
@@ -315,9 +350,15 @@ def memory_delete(memory_id: str):
 async def ws_endpoint(websocket: WebSocket):
     """WebSocket 长连接：Nyx 主动关心通过 WS 实时推送。
 
-    前端连接：ws://host/ws?session_id=xxx
+    前端连接：ws://host/ws?session_id=xxx&token=xxx
     服务端推送：{"type": "care", "message": "..."}
     """
+    # 鉴权：WS 不走 HTTP 中间件，单独校验 query token
+    if not AUTH_DISABLED:
+        tok = websocket.query_params.get("token", "")
+        if tok != AUTH_TOKEN:
+            await websocket.close(code=4401)
+            return
     session_id = websocket.query_params.get("session_id", "")
     if not session_id:
         await websocket.close(code=4400)

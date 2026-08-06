@@ -141,6 +141,30 @@
   .settings-msg.ok { color:#8ef0b0; }
   .settings-msg.err { color:#ff9a9a; }
 
+  .login-mask {
+    position:fixed; inset:0; z-index:99; display:none; align-items:center; justify-content:center;
+    background:rgba(5,8,25,.75); backdrop-filter:blur(4px);
+  }
+  .login-mask.open { display:flex; }
+  .login-box {
+    width:320px; background:linear-gradient(180deg, #1b2048, #12163a);
+    border:1px solid rgba(124,111,240,.4); border-radius:18px; padding:28px 24px;
+    box-shadow:0 20px 60px rgba(0,0,0,.6); text-align:center;
+  }
+  .login-box h3 { color:var(--text); margin-bottom:6px; font-size:17px; }
+  .login-box p { color:var(--dim); font-size:12px; margin-bottom:18px; }
+  .login-box input {
+    width:100%; background:var(--card); border:1px solid rgba(255,255,255,.14); border-radius:10px;
+    padding:11px 13px; color:var(--text); font-size:14px; outline:none; box-sizing:border-box; margin-bottom:14px;
+  }
+  .login-box input:focus { border-color: var(--violet); }
+  .login-box button {
+    width:100%; background:linear-gradient(135deg, var(--violet), #5a4bd8); border:none; border-radius:10px;
+    color:#fff; font-weight:700; padding:11px; font-size:14px; cursor:pointer; transition:opacity .2s;
+  }
+  .login-box button:hover { opacity:.85; }
+  .login-err { color:#ff9a9a; font-size:12px; margin-top:10px; min-height:16px; }
+
 
   .input-bar { display:flex; gap:10px; padding:14px 0 20px; }
   .input-bar input {
@@ -159,6 +183,36 @@
   }
   .input-bar select option { background:#151a3a; color:var(--text); }
   .foot { text-align:center; color:var(--dim); font-size:11px; padding-bottom:10px; }
+
+  /* ── 移动端适配 ── */
+  @media (max-width: 768px) {
+    .app { padding:10px 10px 0; }
+    header { gap:8px; padding-bottom:10px; flex-wrap:wrap; }
+    .moon { width:32px; height:32px; }
+    .brand h1 { font-size:16px; }
+    .brand p { display:none; }
+    .status { font-size:10px; margin-left:auto; }
+    .dot { width:7px; height:7px; }
+    .mem-btn, .new-chat { padding:6px 9px; font-size:11px; }
+    .mode-switch button { font-size:11px; padding:4px 8px; }
+    .avatar-zone { padding:18px 0 10px; }
+    .avatar { width:104px; height:104px; font-size:46px; }
+    .bubble { max-width:88%; font-size:14px; padding:9px 12px; }
+    .input-bar { gap:8px; padding:10px 0 14px; }
+    .input-bar input { font-size:16px; padding:10px 12px; }
+    .input-bar button { padding:10px 16px; font-size:14px; }
+    .foot { font-size:10px; }
+    .memory-panel, .settings-panel { width:100%; right:-100%; }
+    .memory-panel.open, .settings-panel.open { right:0; }
+    .login-box { width:86%; }
+  }
+  @media (max-width: 480px) {
+    .brand h1 { font-size:14px; }
+    .status { display:none; }
+    .avatar { width:88px; height:88px; font-size:38px; }
+    .chat { gap:8px; }
+    .bubble { max-width:92%; }
+  }
 </style>
 </head>
 <body>
@@ -255,7 +309,46 @@
   </div>
 </div>
 
+<div class="login-mask" id="loginMask">
+  <div class="login-box">
+    <h3>🔑 夜之女神 · 访问令牌</h3>
+    <p>请输入访问令牌（请联系部署者获取）</p>
+    <input id="loginInput" type="password" placeholder="nyx-..." autocomplete="off">
+    <button id="loginBtn">进入</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
 <script>
+  // --- 鉴权：所有请求自动携带访问令牌，401 弹登录框 ---
+  const AUTH_KEY = 'cyber_nyx_token';
+  function getToken() { return localStorage.getItem(AUTH_KEY) || ''; }
+  const _fetch = window.fetch.bind(window);
+  window.fetch = function(url, opts) {
+    opts = opts || {};
+    opts.headers = new Headers(opts.headers || {});
+    const t = getToken();
+    if (t) opts.headers.set('Authorization', 'Bearer ' + t);
+    return _fetch(url, opts).then(r => {
+      if (r.status === 401) showLogin();
+      return r;
+    });
+  };
+  const loginMask = document.getElementById('loginMask');
+  const loginInput = document.getElementById('loginInput');
+  const loginErr = document.getElementById('loginErr');
+  function showLogin() { loginMask.classList.add('open'); }
+  function hideLogin() { loginMask.classList.remove('open'); }
+  function doLogin() {
+    const t = loginInput.value.trim();
+    if (!t) { loginErr.textContent = '令牌不能为空'; return; }
+    localStorage.setItem(AUTH_KEY, t);
+    hideLogin();
+    location.reload();
+  }
+  document.getElementById('loginBtn').onclick = doLogin;
+  loginInput.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
   const stars = document.getElementById('stars');
   for (let i=0;i<90;i++) {
     const s = document.createElement('div');
@@ -348,7 +441,7 @@
   function connectWS() {
     if (!sessionId || wsFailed) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = proto + '://' + location.host + '/ws?session_id=' + encodeURIComponent(sessionId);
+    const url = proto + '://' + location.host + '/ws?session_id=' + encodeURIComponent(sessionId) + '&token=' + encodeURIComponent(getToken());
     try { ws = new WebSocket(url); } catch (e) { wsFailed = true; return; }
     ws.onmessage = (ev) => {
       try {
