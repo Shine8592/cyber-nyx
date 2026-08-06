@@ -109,6 +109,8 @@ python app.py
 
 访问 http://127.0.0.1:8000
 
+> 🔌 **接入 LLM / Hermes 内核**：打开页面右上角 ⚙️ 设置，填入 API 地址与密钥即可接入 LLM（保存即生效，无需重启）；Hermes 内核需要运行用户有 CLI 执行权限，命令清单见 [docs/hermes-setup.md](docs/hermes-setup.md)。
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |
