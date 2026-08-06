@@ -20,6 +20,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import nyx_llm
+import settings as app_settings
 from bridges.agent_core import NoCore
 from bridges.hermes_adapter import HermesCore
 from bridges.memory_bridge import MCPMemoryStore, NullMemoryStore
@@ -29,6 +30,9 @@ from proactive import ProactiveCare
 from session import SessionManager
 
 BASE = Path(__file__).resolve().parent
+
+# 启动时加载 config.json → 环境变量（环境变量优先，不覆盖）
+app_settings.load_to_env()
 
 nyx = NyxAgent(str(BASE / "personas" / "nyx.json"))
 LLM_ON = nyx_llm.available()
@@ -157,6 +161,88 @@ def mode_set(body: dict):
     mode = (body or {}).get("mode", "")
     msg = nyx.switch_mode(mode)
     return JSONResponse({"mode": nyx.mode, "message": msg})
+
+
+# --- 设置：内核 / LLM 接入配置 ---
+
+
+@app.get("/api/settings")
+def settings_get():
+    """查看当前配置（API Key 脱敏）。"""
+    cfg = app_settings.load()
+    llm = cfg["llm"]
+    return JSONResponse(
+        {
+            "llm": {
+                "base": llm["base"],
+                "key": app_settings.mask_key(llm["key"]),
+                "model": llm["model"],
+                "configured": bool(llm["base"] and llm["key"]),
+            },
+            "hermes": {
+                "bin": cfg["hermes"]["bin"],
+                "model": cfg["hermes"]["model"],
+                "provider": cfg["hermes"]["provider"],
+                "online": core.name == "hermes",
+            },
+            "memory": {"enabled": MEM_ENABLED},
+            "version": "0.7.0",
+        }
+    )
+
+
+@app.post("/api/settings")
+def settings_set(body: dict):
+    """保存配置：写 config.json + 更新环境变量 + 热重建 Hermes 内核。
+
+    key 传空或含脱敏标记（...）时视为不修改（保留已存密钥）。
+    """
+    global core, LLM_ON, CORE_ENABLED
+    llm = (body or {}).get("llm") or {}
+    hermes = (body or {}).get("hermes") or {}
+
+    cur = app_settings.load()
+    key_val = (llm.get("key") or "").strip()
+    if not key_val or "..." in key_val:
+        key_val = cur["llm"]["key"]  # 未修改，保留原密钥
+
+    cfg = {
+        "llm": {
+            "base": (llm.get("base") or "").strip(),
+            "key": key_val,
+            "model": (llm.get("model") or "").strip() or "gpt-4o-mini",
+        },
+        "hermes": {
+            "bin": (hermes.get("bin") or "").strip(),
+            "model": (hermes.get("model") or "").strip(),
+            "provider": (hermes.get("provider") or "").strip(),
+        },
+    }
+    app_settings.save(cfg)
+    app_settings.apply_to_env(cfg)
+
+    # 热更新 LLM 可用状态（nyx_llm 每次调用都重读环境变量，立即生效）
+    LLM_ON = nyx_llm.available()
+
+    # 热重建 Hermes 内核（探活失败自动降级）
+    try:
+        new_core = HermesCore()
+        if not new_core.health():
+            new_core = NoCore()
+    except Exception:
+        new_core = NoCore()
+    core = new_core
+    CORE_ENABLED = core.name == "hermes"
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "llm": {"configured": LLM_ON},
+            "hermes": {"online": core.name == "hermes", "bin": getattr(core, "bin", "")},
+            "message": "设置已保存并生效"
+            + ("，Hermes 内核已接入" if core.name == "hermes" else "，Hermes 内核未检测到"),
+        }
+    )
 
 
 @app.delete("/api/session/{session_id}")

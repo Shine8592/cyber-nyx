@@ -106,6 +106,41 @@
   .mem-empty { color:var(--dim); font-size:13px; text-align:center; padding:30px 10px; }
   .memory-foot { text-align:center; color:var(--dim); font-size:11px; padding-top:10px; }
 
+  .settings-panel {
+    position:fixed; top:0; right:-380px; width:360px; height:100vh; z-index:40;
+    background:linear-gradient(180deg, #171b3e, #10142e);
+    border-left:1px solid rgba(124,111,240,.35);
+    box-shadow:-8px 0 40px rgba(0,0,0,.5);
+    display:flex; flex-direction:column;
+    transition: right .3s ease; padding:18px 16px;
+  }
+  .settings-panel.open { right:0; }
+  .settings-head { display:flex; align-items:center; justify-content:space-between; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,.1); }
+  .settings-head span { font-size:15px; font-weight:600; color:var(--text); }
+  .settings-close { background:transparent; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:4px 8px; }
+  .settings-close:hover { color:var(--text); }
+  .settings-body { flex:1; overflow-y:auto; margin-top:12px; }
+  .settings-sec { margin-bottom:18px; }
+  .settings-sec h3 { font-size:13px; color:var(--gold); margin-bottom:10px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .settings-field { margin-bottom:10px; }
+  .settings-field label { display:block; font-size:12px; color:var(--dim); margin-bottom:5px; }
+  .settings-field input {
+    width:100%; background:var(--card); border:1px solid rgba(255,255,255,.12); border-radius:10px;
+    padding:10px 12px; color:var(--text); font-size:13px; outline:none; box-sizing:border-box; transition:border .2s;
+  }
+  .settings-field input:focus { border-color: var(--violet); }
+  .settings-status { font-size:12px; color:var(--dim); margin:8px 0 4px; line-height:1.6; }
+  .settings-status .ok { color:#8ef0b0; }
+  .settings-status .bad { color:#ff9a9a; }
+  .settings-save {
+    width:100%; background:linear-gradient(135deg, var(--violet), #5a4bd8); border:none; border-radius:12px;
+    color:#fff; font-weight:700; padding:12px; font-size:14px; cursor:pointer; transition:opacity .2s;
+  }
+  .settings-save:hover { opacity:.85; }
+  .settings-msg { text-align:center; font-size:12px; margin-top:10px; min-height:18px; color:var(--dim); }
+  .settings-msg.ok { color:#8ef0b0; }
+  .settings-msg.err { color:#ff9a9a; }
+
 
   .input-bar { display:flex; gap:10px; padding:14px 0 20px; }
   .input-bar input {
@@ -141,6 +176,7 @@
       <button data-mode="companion">🌙 陪伴</button>
       <button data-mode="work">⚡ 工作</button>
     </div>
+    <button class="mem-btn" id="setBtn" title="设置：接入内核 / LLM">⚙️ 设置</button>
     <button class="mem-btn" id="memBtn" title="查看 Nyx 的记忆">🧠 记忆</button>
     <button class="new-chat" id="newChat" title="开启新对话">新对话</button>
   </header>
@@ -172,6 +208,51 @@
   </div>
   <div class="memory-list" id="memoryList"><div class="mem-empty">正在读取记忆…</div></div>
   <div class="memory-foot" id="memoryFoot"></div>
+</div>
+
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-head">
+    <span>⚙️ 设置 · 接入内核 / LLM</span>
+    <button class="settings-close" id="setClose" title="关闭">✕</button>
+  </div>
+  <div class="settings-body">
+    <div class="settings-status" id="setStatus">正在读取配置…</div>
+
+    <div class="settings-sec">
+      <h3>🌐 LLM 接入（OpenAI 兼容 API）</h3>
+      <div class="settings-field">
+        <label>API 地址</label>
+        <input id="cfgBase" placeholder="https://api.openai.com/v1" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>API Key（留空 = 不修改）</label>
+        <input id="cfgKey" type="password" placeholder="sk-..." autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>模型</label>
+        <input id="cfgModel" placeholder="gpt-4o-mini" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="settings-sec">
+      <h3>⚡ Hermes 内核</h3>
+      <div class="settings-field">
+        <label>可执行路径（留空 = 自动探测）</label>
+        <input id="cfgHermesBin" placeholder="hermes 或 /usr/local/lib/hermes-agent/venv/bin/hermes" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>模型</label>
+        <input id="cfgHermesModel" placeholder="默认随 Hermes" autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label>Provider</label>
+        <input id="cfgHermesProvider" placeholder="可选" autocomplete="off">
+      </div>
+    </div>
+
+    <button class="settings-save" id="setSave">保存并应用</button>
+    <div class="settings-msg" id="setMsg"></div>
+  </div>
 </div>
 
 <script>
@@ -378,11 +459,78 @@
   }
 
   document.getElementById('memBtn').onclick = () => {
+    setPanel.classList.remove('open');
     memPanel.classList.add('open');
     refreshMemory();
   };
   document.getElementById('memClose').onclick = () => memPanel.classList.remove('open');
   memPanel.addEventListener('click', (e) => { if (e.target === memPanel) memPanel.classList.remove('open'); });
+
+  // --- 设置面板：接入 LLM / Hermes 内核 ---
+  const setPanel = document.getElementById('settingsPanel');
+  const setStatus = document.getElementById('setStatus');
+  const setMsg = document.getElementById('setMsg');
+  const cfgBase = document.getElementById('cfgBase');
+  const cfgKey = document.getElementById('cfgKey');
+  const cfgModel = document.getElementById('cfgModel');
+  const cfgHBin = document.getElementById('cfgHermesBin');
+  const cfgHModel = document.getElementById('cfgHermesModel');
+  const cfgHProvider = document.getElementById('cfgHermesProvider');
+
+  function renderSetStatus(d) {
+    const llmTxt = d.llm.configured ? '<span class="ok">✅ LLM 已配置</span>' : '<span class="bad">⚠️ LLM 未配置（本地演示）</span>';
+    const hTxt = d.hermes.online ? '<span class="ok">✅ Hermes 内核在线</span>' : '<span class="bad">⚠️ Hermes 内核离线</span>';
+    const mTxt = d.memory.enabled ? '<span class="ok">✅ 记忆系统在线</span>' : '<span class="bad">⚠️ 记忆系统离线</span>';
+    setStatus.innerHTML = llmTxt + '<br>' + hTxt + '<br>' + mTxt;
+  }
+
+  function loadSettings() {
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      renderSetStatus(d);
+      cfgBase.value = d.llm.base || '';
+      cfgKey.placeholder = d.llm.key ? '已保存：' + d.llm.key + '（留空不修改）' : 'sk-...';
+      cfgKey.value = '';
+      cfgModel.value = d.llm.model || 'gpt-4o-mini';
+      cfgHBin.value = d.hermes.bin || '';
+      cfgHModel.value = d.hermes.model || '';
+      cfgHProvider.value = d.hermes.provider || '';
+    }).catch(() => { setStatus.textContent = '读取配置失败'; });
+  }
+
+  document.getElementById('setBtn').onclick = () => {
+    memPanel.classList.remove('open');
+    setPanel.classList.add('open');
+    setMsg.textContent = '';
+    loadSettings();
+  };
+  document.getElementById('setClose').onclick = () => setPanel.classList.remove('open');
+  setPanel.addEventListener('click', (e) => { if (e.target === setPanel) setPanel.classList.remove('open'); });
+
+  document.getElementById('setSave').onclick = () => {
+    setMsg.textContent = '保存中…';
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        llm: { base: cfgBase.value.trim(), key: cfgKey.value.trim(), model: cfgModel.value.trim() },
+        hermes: { bin: cfgHBin.value.trim(), model: cfgHModel.value.trim(), provider: cfgHProvider.value.trim() },
+      }),
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        setMsg.className = 'settings-msg ok';
+        setMsg.textContent = d.message || '设置已保存并生效';
+        renderSetStatus(d);
+        cfgKey.value = '';
+        cfgKey.placeholder = '已保存（留空不修改）';
+      } else {
+        setMsg.className = 'settings-msg err';
+        setMsg.textContent = '保存失败';
+      }
+    }).catch(() => {
+      setMsg.className = 'settings-msg err';
+      setMsg.textContent = '保存失败：无法连接服务';
+    });
+  };
 
   // --- 页面初始化：恢复历史 → 连接 WS → 轮询兜底 ---
   (async () => {
