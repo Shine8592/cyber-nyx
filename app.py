@@ -188,6 +188,14 @@ def index():
     return (RES_DIR / "web" / "index.html").read_text(encoding="utf-8")
 
 
+# --- 静态资源（头像/音频等） ---
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+
+_ASSETS_DIR = RES_DIR / "web" / "assets"
+if _ASSETS_DIR.is_dir():
+    app.mount("/assets", _StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
+
+
 # --- 会话管理端点 ---
 
 
