@@ -5,13 +5,15 @@
 把咱自己研发的 universal-agent-memory（BM25+向量+RRF 混合检索）
 接入 cyber-nyx 拟人壳，实现跨会话记忆。
 
-通过 MCP JSON-RPC over stdio 与 mcp_server.py 通信。
+引擎来源：本项目已**内嵌**完整记忆引擎（vendor/universal-agent-memory/scripts，
+自研记忆系统最新版，跨平台开箱即用），通过 MCP JSON-RPC over stdio 通信。
 使用长连接复用，避免每次操作启动子进程的开销。
 """
 
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -42,14 +44,22 @@ class _MCPConnection:
 
     def __init__(self, script: str):
         self.script = script
-        hermes = os.path.expanduser("~/.hermes")
+        # 优先环境变量；未设置时按平台选默认记忆目录：
+        #   Windows → ~/.config/opencode/memory（既有部署目录，含模型缓存）
+        #   Linux   → ~/.hermes（原有默认）
+        if os.name == "nt":
+            default_mem = os.path.join(
+                os.path.expanduser("~"), ".config", "opencode", "memory"
+            )
+            default_root = os.path.expanduser("~")
+        else:
+            default_mem = os.path.join(os.path.expanduser("~"), ".hermes", "memory")
+            default_root = os.path.expanduser("~/.hermes")
         self._env = {
             **os.environ,
-            "MEMORY_STORE": os.environ.get(
-                "MEMORY_STORE", os.path.join(hermes, "memory")
-            ),
-            "MEMORY_PROJECT_ROOT": os.environ.get("MEMORY_PROJECT_ROOT", hermes),
-            "MEMORY_GLOBAL_DIR": os.environ.get("MEMORY_GLOBAL_DIR", hermes),
+            "MEMORY_STORE": os.environ.get("MEMORY_STORE", default_mem),
+            "MEMORY_PROJECT_ROOT": os.environ.get("MEMORY_PROJECT_ROOT", default_root),
+            "MEMORY_GLOBAL_DIR": os.environ.get("MEMORY_GLOBAL_DIR", default_root),
         }
         self._proc = None
         self._stdout_queue = Queue()
@@ -58,12 +68,18 @@ class _MCPConnection:
     def _ensure_started(self):
         if self._started and self._proc and self._proc.poll() is None:
             return
+        # 用当前解释器启动（Windows 上无 python3，需用 python / sys.executable）
+        py = os.environ.get("NYX_PYTHON", "") or sys.executable or "python"
         self._proc = subprocess.Popen(
-            ["python3", self.script],
+            [py, self.script],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            # 子进程协议响应由 mcp_server.py 用 UTF-8 写出；外部调试输出（进度条等）
+            # 可能是系统编码，errors="replace" 兜底，避免 GBK 解码异常中断读取线程
+            errors="replace",
             bufsize=1,
             env=self._env,
             cwd=os.path.dirname(self.script) or None,
@@ -138,16 +154,42 @@ class _MCPConnection:
 
 
 def _default_script() -> str:
-    """自动探测 universal-agent-memory 的 mcp_server.py。"""
+    """自动探测 universal-agent-memory 的 mcp_server.py。
+
+    优先使用本项目**内嵌**的记忆引擎（vendor/universal-agent-memory），
+    保证仓库自带完整记忆系统、跨平台开箱即用；其次才回退到环境变量/
+    本机部署路径（Linux 场景兼容）。
+    """
+    # ① 本项目内嵌的记忆引擎（推荐，跨平台自包含）
+    here = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(here)  # cyber-nyx 根目录
+    embedded = os.path.join(
+        project_root, "vendor", "universal-agent-memory", "scripts", "mcp_server.py"
+    )
+    if os.path.exists(embedded):
+        return embedded
+    # ② 环境变量显式指定
+    env = os.environ.get("NYX_MCP_SCRIPT", "")
+    if env and os.path.exists(env):
+        return env
+    # ③ 本机部署路径兜底
     candidates = [
-        os.environ.get("NYX_MCP_SCRIPT", ""),
+        os.path.join(
+            os.path.expanduser("~"), ".config", "opencode", "memory", "scripts",
+            "mcp_server.py",
+        ),
+        os.path.join(
+            os.path.expanduser("~"), ".hermes", "scripts", "mcp_server.py",
+        ),
         "/home/yaner/universal-agent-memory/scripts/mcp_server.py",
         "/root/.hermes/scripts/mcp_server.py",
     ]
     for p in candidates:
-        if p and os.path.exists(p):
+        if os.path.exists(p):
             return p
-    return "/root/.hermes/scripts/mcp_server.py"
+    return os.path.join(
+        os.path.expanduser("~"), ".hermes", "scripts", "mcp_server.py"
+    )
 
 
 class MCPMemoryStore(MemoryStore):
@@ -176,6 +218,13 @@ class MCPMemoryStore(MemoryStore):
     def _call(self, tool: str, args: dict, timeout: int = 120) -> str:
         conn = self._get_conn(self.script)
         return conn._call(tool, args, timeout)
+
+    def close(self):
+        """关闭底层 MCP 连接（释放子进程）。"""
+        with self._conn_lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
     def recall(
         self, query: str, top_k: int = 5, include_snapshots: bool = False
@@ -295,7 +344,11 @@ class MCPMemoryStore(MemoryStore):
         """短期记忆目录（stm/*.json，每条记忆一个文件）。"""
         from pathlib import Path as _P
 
-        store = os.environ.get("MEMORY_STORE", _P.home() / ".hermes" / "memory")
+        if os.name == "nt":
+            default = _P.home() / ".config" / "opencode" / "memory"
+        else:
+            default = _P.home() / ".hermes" / "memory"
+        store = os.environ.get("MEMORY_STORE", default)
         return _P(store) / "stm"
 
     def list_recent(self, limit: int = 30) -> list:

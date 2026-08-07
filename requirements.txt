@@ -1,3 +1,8 @@
 ﻿fastapi>=0.104.0
 uvicorn>=0.24.0
 pydantic>=2.0.0
+
+# --- 内嵌记忆引擎（vendor/universal-agent-memory，自研记忆系统 v3.0.2） ---
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0
+numpy>=1.24.0

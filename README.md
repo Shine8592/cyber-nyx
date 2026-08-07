@@ -111,6 +111,8 @@ python app.py
 
 > 🔌 **接入 LLM / Hermes 内核**：打开页面右上角 ⚙️ 设置，填入 API 地址与密钥即可接入 LLM（保存即生效，无需重启）；Hermes 内核需要运行用户有 CLI 执行权限，命令清单见 [docs/hermes-setup.md](docs/hermes-setup.md)。
 
+> 🧠 **记忆系统（已内嵌）**：项目自带完整记忆引擎 —— 自研的 universal-agent-memory（BM25+向量+RRF 混合检索），代码内嵌于 `vendor/universal-agent-memory/`，跨平台开箱即用。首次运行会在 `~/.config/opencode/memory` 自动下载多语言嵌入模型（约 250MB）。如需复用已部署的记忆数据，可设置环境变量 `MEMORY_STORE` / `MEMORY_PROJECT_ROOT` / `MEMORY_GLOBAL_DIR` 指向既有记忆目录。
+
 > 🔑 **访问令牌（鉴权）**：启动时自动生成 `nyx-...` 令牌（写入 `config.json` 并在日志打印），所有 `/api/*` 需要 `Authorization: Bearer <token>`；首次打开页面会要求输入令牌（浏览器记住）。测试环境用 `NYX_AUTH_DISABLE=1` 关闭，自定义令牌用环境变量 `NYX_AUTH_TOKEN` 或 `config.json` 的 `auth.token`。
 
 ### 环境变量
@@ -125,6 +127,9 @@ python app.py
 | `NYX_STREAM` | 启用 SSE 流式 | 0 |
 | `NYX_RETRY_MAX` | LLM 重试次数 | 3 |
 | `NYX_RETRY_BASE` | 重试基础秒数 | 1.0 |
+| `NYX_MCP_SCRIPT` | 记忆引擎 mcp_server.py 路径（覆盖内嵌探测） | 自动 |
+| `MEMORY_STORE` | 记忆数据目录 | ~/.config/opencode/memory |
+| `MEMORY_PROJECT_ROOT` / `MEMORY_GLOBAL_DIR` | 记忆项目根目录 | 用户主目录 |
 
 ---
 

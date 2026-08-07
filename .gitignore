@@ -8,3 +8,7 @@ dist/
 build/
 .env
 config.json
+
+# 内嵌记忆引擎运行时生成物（不进版本库）
+vendor/universal-agent-memory/scripts/__pycache__/
+vendor/universal-agent-memory/scripts/.opencode/

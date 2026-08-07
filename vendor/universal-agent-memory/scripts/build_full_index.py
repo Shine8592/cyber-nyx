@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""
+嘟嘟记忆系统增强脚本 - 将所有核心记忆与日志编入向量索引
+"""
+import os, sys, json, re, time
+from pathlib import Path
+from datetime import datetime, timezone
+from sentence_transformers import SentenceTransformer
+import faiss
+import numpy as np
+
+# Safe UTF-8 stdout for Windows GBK consoles
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8", "utf_8"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+sys.path.insert(0, str(Path(__file__).parent))
+from memory_config import (
+    MODEL_NAME, MODEL_PATH, MEMORY_DIR, HERMES_DIR, SCRIPTS_DIR,
+    INDEX_PATH, METADATA_PATH, CORE_FILES, DAILY_DIR,
+    MAX_CHUNK_CHARS, ensure_dirs, PROJECT_ROOT,
+    write_index_safe, get_opencode_global
+)
+
+def extract_core_and_logs():
+    """从核心记忆文件和日志中提取文本块"""
+    chunks = []
+
+    for name in CORE_FILES:
+        fpath = HERMES_DIR / name
+        if not fpath.exists():
+            fpath = PROJECT_ROOT / name
+        if fpath.exists():
+            text = fpath.read_text(encoding='utf-8')
+            sections = re.split(r'\n(?=#)', text)
+            for i, sec in enumerate(sections):
+                if len(sec.strip()) > 50:
+                    chunks.append({
+                        "id": f"core/{name}:{i}",
+                        "text": sec.strip(),
+                        "source": name,
+                        "type": "core_memory",
+                        "timestamp": datetime.now().isoformat()
+                    })
+
+    if DAILY_DIR.exists():
+        seen = set()
+        for fpath in sorted(DAILY_DIR.glob("*.md")):
+            try:
+                text = fpath.read_text(encoding='utf-8').strip()
+                if len(text) > 30:
+                    key = text[:50]
+                    if key not in seen:
+                        seen.add(key)
+                        chunks.append({
+                            "id": f"daily/{fpath.name}",
+                            "text": text[:MAX_CHUNK_CHARS],
+                            "source": f"daily/{fpath.name}",
+                            "type": "daily_log",
+                            "timestamp": datetime.now().isoformat()
+                        })
+            except Exception as e:
+                print(f"  ⚠ {fpath.name}: {e}")
+
+    # --- 【补充】读取 MCP 记忆系统各目录（STM/short_term/scenarios/atoms/personas） ---
+    # 修复：此前只扫核心文件 + daily 日志，STM 真实记忆从不进索引，语义检索长期不完整
+    for sub in ["stm", "short_term", "scenarios", "archived", "personas", "atoms"]:
+        d = MEMORY_DIR / sub
+        if not d.exists():
+            continue
+        for fpath in sorted(d.glob("*")):
+            if not fpath.is_file():
+                continue
+            try:
+                if fpath.suffix == ".json":
+                    data = json.loads(fpath.read_text(encoding='utf-8'))
+                    if isinstance(data, dict) and data.get("content"):
+                        text = str(data["content"]).strip()
+                    elif isinstance(data, list):
+                        text = json.dumps(data, ensure_ascii=False)[:MAX_CHUNK_CHARS]
+                    else:
+                        continue
+                else:
+                    text = fpath.read_text(encoding='utf-8').strip()
+                if len(text) > 20:
+                    chunks.append({
+                        "id": f"{sub}/{fpath.name}",
+                        "text": text[:MAX_CHUNK_CHARS],
+                        "source": f"{sub}/{fpath.name}",
+                        "type": "memory_" + sub,
+                        "timestamp": fpath.stat().st_mtime
+                    })
+            except Exception as e:
+                print(f"  ⚠ {sub}/{fpath.name}: {e}")
+
+    print(f"  核心记忆: {sum(1 for c in chunks if c['type']=='core_memory')} 块")
+    print(f"  日志: {sum(1 for c in chunks if c['type']=='daily_log')} 条")
+    print(f"  MCP记忆: {sum(1 for c in chunks if c['type'].startswith('memory_'))} 条")
+    return chunks
+
+def build_index(chunks):
+    """构建Faiss向量索引"""
+    import os
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    print(f"\n🧠 加载模型: {MODEL_NAME}")
+    if MODEL_PATH.exists():
+        model = SentenceTransformer(str(MODEL_PATH))
+    else:
+        try:
+            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+            model = SentenceTransformer(MODEL_NAME)
+            MODEL_PATH.mkdir(parents=True, exist_ok=True)
+            model.save(str(MODEL_PATH))
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        except Exception as e:
+            legacy = get_opencode_global() / "semantic_model"
+            if legacy.exists():
+                print(f"  ⚠ 新模型不可用，回退旧模型: {e}")
+                model = SentenceTransformer(str(legacy))
+            else:
+                raise
+
+    texts = [c["text"] for c in chunks]
+    if not texts:
+        print("❌ 没有可索引的文本")
+        return
+    print(f"📊 生成 {len(texts)} 个嵌入向量...")
+
+    embeddings = model.encode(texts, show_progress_bar=False, batch_size=32)
+    embeddings = np.asarray(embeddings, dtype=np.float32)
+    if embeddings.ndim == 1:
+        embeddings = embeddings.reshape(1, -1)
+    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+
+    dimension = embeddings.shape[1]
+    index = faiss.IndexFlatIP(dimension)
+    index.add(embeddings.astype(np.float32))
+
+    write_index_safe(index, INDEX_PATH)
+    with open(METADATA_PATH, 'w', encoding='utf-8') as f:
+        json.dump(chunks, f, indent=2, ensure_ascii=False)
+
+    print(f"\n✅ 索引构建完成!")
+    print(f"   总块数: {len(chunks)}")
+    print(f"   维度: {dimension}")
+    print(f"   索引: {INDEX_PATH}")
+    print(f"   元数据: {METADATA_PATH}")
+
+if __name__ == '__main__':
+    print("=" * 50)
+    print("🚀 opencode 记忆系统 - 全量索引构建")
+    print("=" * 50)
+    start = time.time()
+
+    ensure_dirs()
+    chunks = extract_core_and_logs()
+
+    # 全量重建：只在本批 chunks 内部去重，不与旧元数据比对
+    # （旧逻辑会把所有 chunk 判为已存在，导致索引重建为空 —— 已修复）
+    seen_keys = set()
+    uniq = []
+    for c in chunks:
+        key = (c.get("text", "") or "")[:80]
+        if not key.strip() or key in seen_keys:
+            continue
+        seen_keys.add(key)
+        uniq.append(c)
+    if len(uniq) < len(chunks):
+        print(f"  去重过滤: {len(chunks) - len(uniq)} 条（批内重复）")
+    chunks = uniq
+
+    MAX_CHUNKS = 500
+    if len(chunks) > MAX_CHUNKS:
+        def sort_key(c):
+            ts = c.get('timestamp', '')
+            return ts if isinstance(ts, str) else str(ts)
+        chunks.sort(key=sort_key, reverse=True)
+        chunks = chunks[:MAX_CHUNKS]
+        print(f"  📐 压缩至 {MAX_CHUNKS} 条（保留最新）")
+
+    build_index(chunks)
+    elapsed = time.time() - start
+    print(f"\n⏱️ 耗时: {elapsed:.1f}s")
