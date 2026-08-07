@@ -35,6 +35,7 @@ from proactive import ProactiveCare
 from session import SessionManager
 
 import hermes_setup
+import stt
 
 if getattr(sys, "frozen", False):
     BASE = Path(sys.executable).resolve().parent
@@ -871,7 +872,34 @@ async def clone_voice_delete(name: str = ""):
 # --- 训练：环境检测 / 一键安装 / 一键训练 ---
 @app.get("/api/env")
 def env_detect():
-    return training.detect_env()
+    d = training.detect_env()
+    d["stt"] = stt.get_status()["installed"]
+    return d
+
+
+# --- 语音输入（本地 STT 识别） ---
+@app.get("/api/stt/status")
+def stt_status():
+    return stt.get_status()
+
+
+@app.post("/api/stt/setup")
+def stt_setup_start():
+    return stt.install_start()
+
+
+@app.post("/api/stt")
+async def stt_recognize(request: Request):
+    try:
+        data = await request.body()
+        if not data:
+            return JSONResponse({"error": "缺少音频数据"}, status_code=400)
+        text = stt.transcribe(data)
+        return {"text": text}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": "识别失败：%s" % e}, status_code=500)
 
 
 @app.post("/api/setup")
