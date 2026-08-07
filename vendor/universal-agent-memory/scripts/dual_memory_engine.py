@@ -83,10 +83,11 @@ class ShortTermMemory:
         if model is None:
             model = getattr(self, "_dup_model", None)
         if model is None:
-            from memory_config import MODEL_PATH, MODEL_NAME
+            from memory_config import MODEL_PATH, load_embedding_model
             cache = MODEL_PATH
             try:
-                model = SentenceTransformer(str(cache) if cache.exists() else MODEL_NAME)
+                # 统一加载入口：本地缓存离线直读 / 在线下载 / 国内镜像自动降级
+                model = load_embedding_model() if not cache.exists() else SentenceTransformer(str(cache))
             except Exception:
                 return None
             self._dup_model = model

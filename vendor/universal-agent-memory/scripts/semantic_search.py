@@ -48,22 +48,15 @@ class SemanticMemorySearch:
         self.dimension = 384  # 默认值；load_model() 后更新为实际维度
         
     def load_model(self):
-        """Load sentence transformer model from local cache only"""
+        """Load sentence transformer model (local cache → online → mirror fallback)"""
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
         os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
         start_time = time.time()
 
-        # 新模型缓存目录（按模型名区分）
-        model_cache = MODEL_PATH
-        if model_cache.exists():
-            self.model = SentenceTransformer(str(model_cache))
-        else:
-            # 未缓存：尝试在线下载（离线时抛错，由调用方处理）
-            os.environ.pop("TRANSFORMERS_OFFLINE", None)
-            self.model = SentenceTransformer(MODEL_NAME)
-            model_cache.mkdir(parents=True, exist_ok=True)
-            self.model.save(str(model_cache))
-            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        # 统一加载入口：本地缓存离线直读 / 在线下载 / 国内镜像自动降级
+        from memory_config import load_embedding_model
+        self.model = load_embedding_model()
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
         # 动态读取真实维度（换模型后不会因硬编码 384 崩溃）
         try:

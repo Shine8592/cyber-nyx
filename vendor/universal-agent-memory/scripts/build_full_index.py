@@ -110,10 +110,9 @@ def build_index(chunks):
         model = SentenceTransformer(str(MODEL_PATH))
     else:
         try:
-            os.environ.pop("TRANSFORMERS_OFFLINE", None)
-            model = SentenceTransformer(MODEL_NAME)
-            MODEL_PATH.mkdir(parents=True, exist_ok=True)
-            model.save(str(MODEL_PATH))
+            # 统一加载入口（在线下载 + 国内镜像自动降级）
+            from memory_config import load_embedding_model
+            model = load_embedding_model()
             os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
         except Exception as e:
             legacy = get_opencode_global() / "semantic_model"

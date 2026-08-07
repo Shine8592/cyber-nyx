@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Dict
 
 sys.path.insert(0, str(Path(__file__).parent))
-from memory_config import METADATA_PATH, MODEL_NAME, MODEL_PATH
+from memory_config import METADATA_PATH, MODEL_PATH
 
 SIMILARITY_THRESHOLD = 0.85
 
@@ -19,9 +19,12 @@ class DedupEngine:
     def _load_model(self):
         try:
             from sentence_transformers import SentenceTransformer
-            # 统一使用 memory_config 的 MODEL_PATH（多语言嵌入模型）
-            cache = MODEL_PATH if MODEL_PATH.exists() else None
-            self.model = SentenceTransformer(str(cache) if cache else MODEL_NAME)
+            from memory_config import MODEL_PATH, load_embedding_model
+            # 统一加载入口：本地缓存离线直读 / 在线下载 / 国内镜像自动降级
+            if MODEL_PATH.exists():
+                self.model = SentenceTransformer(str(MODEL_PATH))
+            else:
+                self.model = load_embedding_model()
         except Exception as e:
             print(f"  ⚠ 去重模型加载失败: {e}")
 

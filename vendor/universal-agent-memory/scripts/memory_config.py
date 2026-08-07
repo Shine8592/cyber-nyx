@@ -95,6 +95,54 @@ def get_model_path() -> Path:
 
 MODEL_PATH = get_model_path()
 
+
+# --- 嵌入模型统一加载（含国内镜像自动降级） ---
+# 国内直连 HuggingFace 常超时，首次需下载模型。由本函数统一处理：
+#   ① 本地缓存存在 → 直接加载（全程离线，最快）
+#   ② 缓存缺失 → 先走 HF_ENDPOINT（默认官方或用户自设镜像）
+#   ③ 失败 → 自动切 hf-mirror.com 国内镜像重试（结束后恢复原 HF_ENDPOINT，不污染全局）
+_MIRROR_ENDPOINT = "https://hf-mirror.com"
+
+def _load_embedding():
+    """按当前 HF_ENDPOINT 加载并缓存模型（允许联网下载）。"""
+    from sentence_transformers import SentenceTransformer
+    model = SentenceTransformer(MODEL_NAME)
+    try:
+        MODEL_PATH.mkdir(parents=True, exist_ok=True)
+        model.save(str(MODEL_PATH))  # 持久化缓存，下次离线直读
+    except Exception:
+        pass  # 缓存失败不致命，返回已加载模型即可
+    return model
+
+def load_embedding_model():
+    """加载嵌入模型（含镜像降级）。
+
+    ① 本地缓存存在 → 离线直读（最快）；
+    ② 否则在线下载（尊重用户设的 HF_ENDPOINT 镜像）；
+    ③ 直连失败自动切 hf-mirror.com 国内镜像重试。
+    全部失败则抛异常，由调用方回退/兜底。
+    """
+    from sentence_transformers import SentenceTransformer
+    if MODEL_PATH.exists():
+        return SentenceTransformer(str(MODEL_PATH))  # ① 离线直读
+
+    _old = os.environ.get("HF_ENDPOINT", "")
+    os.environ.pop("TRANSFORMERS_OFFLINE", None)  # 允许联网下载
+    try:
+        # ② 先按当前 endpoint 直连下载
+        return _load_embedding()
+    except Exception:
+        # ③ 直连失败 → 切国内镜像重试
+        try:
+            os.environ["HF_ENDPOINT"] = _MIRROR_ENDPOINT
+            return _load_embedding()
+        finally:
+            # 恢复原 HF_ENDPOINT，避免污染全局
+            if _old:
+                os.environ["HF_ENDPOINT"] = _old
+            else:
+                os.environ.pop("HF_ENDPOINT", None)
+
 STM_DIR = MEMORY_DIR / "stm"
 LTM_FILE = HERMES_DIR / "MEMORY.md"
 COORDINATOR_FILE = MEMORY_DIR / "memory_coordinator.json"
