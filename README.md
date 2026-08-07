@@ -8,7 +8,7 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![v0.7](https://img.shields.io/badge/version-0.7-blue.svg)]()
+[![v0.8](https://img.shields.io/badge/version-0.8-blue.svg)]()
 
 ---
 
@@ -80,6 +80,16 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 - **WebSocket 实时推送**：`/ws?session_id=xxx` 长连接，主动关心由服务端实时推送（每 30 秒检查），前端 WS 断线自动回退 5 分钟轮询
 - **防重复关怀**：首次问候 / 空闲提醒 / 情绪关怀触发后视为一次互动，不再刷屏
 
+### 🔟 声音克隆 + 语音合成（v0.8，疯ˣ 交付）
+- **GPT-SoVITS v2 声音克隆**：一键安装 / 一键训练 / 一键推理（`training.py`），上传少量音频即可克隆你自己的声音
+- **国内镜像自动降级**：预训练权重 hf-mirror → HF、GPT-SoVITS 源码 ghfast.top → GitHub、PyPI 清华 → 官方，国内网络开箱即用
+- **edge-tts 即时语音**：无需训练即可用微软 Edge 语音合成（`/api/tts`）
+- **声音档案管理**：`/api/voices` 列出可用音色，`/api/clone` 管理克隆档案，前端可视化面板
+
+### 1️⃣1️⃣ Hermes Agent 自动部署（v0.8）
+- **一键部署**：`hermes_setup.py` 自动探测本机 Hermes CLI，未安装则自动安装（uv / Python 3.11 / Node / ffmpeg / PortableGit）
+- **内核直连**：部署完成后自动写入 `config.json`，Nyx 直接以 Hermes 为内核运行（`/api/hermes/deploy`）
+
 ---
 
 ## 🛠 架构
@@ -113,6 +123,11 @@ python app.py
 
 > 🔑 **访问令牌（鉴权）**：启动时自动生成 `nyx-...` 令牌（写入 `config.json` 并在日志打印），所有 `/api/*` 需要 `Authorization: Bearer <token>`；首次打开页面会要求输入令牌（浏览器记住）。测试环境用 `NYX_AUTH_DISABLE=1` 关闭，自定义令牌用环境变量 `NYX_AUTH_TOKEN` 或 `config.json` 的 `auth.token`。
 
+> 🎙️ **语音功能（v0.8）**：
+> - **即时合成**：`edge-tts` 无需训练，开箱即用（页面右上角可试听）
+> - **声音克隆**：在「声音克隆」面板上传 10~60 秒音频 → 一键安装环境（自动下载 GPT-SoVITS 权重）→ 一键训练 → 生成专属声音
+> - 训练需要显卡（NVIDIA GPU + CUDA），CPU 训练速度较慢；国内网络已内置镜像自动切换
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -125,6 +140,9 @@ python app.py
 | `NYX_STREAM` | 启用 SSE 流式 | 0 |
 | `NYX_RETRY_MAX` | LLM 重试次数 | 3 |
 | `NYX_RETRY_BASE` | 重试基础秒数 | 1.0 |
+| `NYX_MCP_SCRIPT` | 记忆引擎 mcp_server.py 路径（覆盖内嵌探测） | 自动 |
+| `MEMORY_STORE` | 记忆数据目录 | ~/.config/opencode/memory |
+| `MEMORY_PROJECT_ROOT` / `MEMORY_GLOBAL_DIR` | 记忆项目根目录 | 用户主目录 |
 
 ---
 
@@ -156,6 +174,29 @@ Response: text/event-stream
 GET /api/status
 ```
 
+### 语音（v0.8）
+```
+GET  /api/voices          # 列出可用音色（edge-tts + 克隆档案）
+POST /api/tts             # 语音合成
+POST /api/clone           # 上传音频创建声音克隆档案
+DELETE /api/clone         # 删除克隆档案
+POST /api/train           # 一键训练（GPT-SoVITS v2）
+GET  /api/train/status    # 训练进度
+```
+
+### Hermes 部署（v0.8）
+```
+POST /api/hermes/deploy         # 一键部署 Hermes 内核
+GET  /api/hermes/deploy/status  # 部署进度
+```
+
+### 环境与设置（v0.8）
+```
+GET  /api/env          # 查看运行环境
+POST /api/setup        # 环境自检/配置
+GET  /api/setup/status # 设置状态
+```
+
 ---
 
 ## 🗺 Roadmap
@@ -175,7 +216,9 @@ GET /api/status
 - [x] 前端刷新恢复聊天历史（v0.7）
 - [x] 记忆可视化/管理（记忆面板，查看 + 删除，v0.7）
 - [x] WebSocket 主动关心实时推送（v0.7）
-- [ ] 语音交互（TTS/STT）
+- [x] 语音交互基础版（edge-tts 合成 + GPT-SoVITS v2 声音克隆，v0.8）
+- [x] Hermes Agent 一键部署（v0.8）
+- [ ] 声音克隆全自动训练增强（STT 语音输入）
 - [ ] 桌面悬浮数字形象（Live2D）
 - [ ] 多平台发布（Win/macOS/Linux）
 
