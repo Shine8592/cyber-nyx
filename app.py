@@ -14,15 +14,18 @@ import asyncio
 import json
 import os
 import secrets
+import sys
+import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 import nyx_llm
 import settings as app_settings
+import training
 from bridges.agent_core import NoCore
 from bridges.hermes_adapter import HermesCore
 from bridges.memory_bridge import MCPMemoryStore, NullMemoryStore
@@ -31,13 +34,21 @@ from nyx import NyxAgent
 from proactive import ProactiveCare
 from session import SessionManager
 
-BASE = Path(__file__).resolve().parent
+import hermes_setup
+
+if getattr(sys, "frozen", False):
+    BASE = Path(sys.executable).resolve().parent
+    RES_DIR = Path(sys._MEIPASS)
+else:
+    BASE = Path(__file__).resolve().parent
+    RES_DIR = BASE
 
 # 启动时加载 config.json → 环境变量（环境变量优先，不覆盖）
 app_settings.load_to_env()
 
 # --- 鉴权：访问令牌（NYX_AUTH_DISABLE=1 可关闭，测试用） ---
-AUTH_DISABLED = os.environ.get("NYX_AUTH_DISABLE", "0") == "1"
+# GUI 独立窗口模式只监听 127.0.0.1，无需令牌
+AUTH_DISABLED = os.environ.get("NYX_AUTH_DISABLE", "0") == "1" or getattr(sys, "frozen", False) or "--gui" in sys.argv
 
 
 def _ensure_auth_token() -> str:
@@ -57,12 +68,15 @@ def _ensure_auth_token() -> str:
 
 AUTH_TOKEN = "" if AUTH_DISABLED else _ensure_auth_token()
 
-nyx = NyxAgent(str(BASE / "personas" / "nyx.json"))
+nyx = NyxAgent(str(RES_DIR / "personas" / "nyx.json"))
 LLM_ON = nyx_llm.available()
 
 # --- 内核桥接（Hermes） ---
 CORE_ENABLED = True
 try:
+    _hbin = hermes_setup.find_hermes_bin()
+    if _hbin:
+        os.environ.setdefault("NYX_HERMES_BIN", _hbin)
     core = HermesCore()
     if not core.health():
         core = NoCore()
@@ -171,7 +185,7 @@ class ChatIn(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (BASE / "web" / "index.html").read_text(encoding="utf-8")
+    return (RES_DIR / "web" / "index.html").read_text(encoding="utf-8")
 
 
 # --- 会话管理端点 ---
@@ -637,7 +651,277 @@ def status():
         "persona": nyx.persona["name"],
         "mode": nyx.mode,
         "version": app.version,
+        "tts": "edge-tts" if _tts_available() else "none",
+        "clone": {
+            "available": _gsv_available(),
+            "profiles": _clone_list(),
+        },
     }
+
+
+# --- TTS：微软 edge-tts + GPT-SoVITS 克隆 ---
+_TTS_VOICES = {
+    "night": "zh-CN-XiaoxiaoNeural",
+    "dawn": "zh-CN-XiaoyiNeural",
+}
+
+GSV_URL = "http://127.0.0.1:9880"
+CLONE_DIR = (BASE / "train_data" / "clones").resolve()
+CLONE_DIR.mkdir(parents=True, exist_ok=True)
+CLONE_PROFILES: dict = {}
+
+
+def _scan_clone_profiles():
+    if not CLONE_DIR.is_dir():
+        return
+    for f in CLONE_DIR.iterdir():
+        if f.suffix.lower() not in (".wav", ".mp3", ".flac", ".ogg"):
+            continue
+        txt = f.with_suffix(".txt")
+        prompt_text = ""
+        if txt.exists():
+            try:
+                prompt_text = txt.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+        CLONE_PROFILES[f.stem] = {"audio": str(f), "prompt_text": prompt_text}
+
+
+_scan_clone_profiles()
+
+TTS_VOICE_LIB = [
+    {"id": "zh-CN-XiaoxiaoNeural", "name": "晓晓", "gender": "女", "style": "温暖细腻（小夜默认）"},
+    {"id": "zh-CN-XiaoyiNeural", "name": "晓伊", "gender": "女", "style": "元气活力（晨晓默认）"},
+    {"id": "zh-CN-YunxiNeural", "name": "云希", "gender": "男", "style": "阳光开朗"},
+    {"id": "zh-CN-YunjianNeural", "name": "云健", "gender": "男", "style": "成熟沉稳"},
+    {"id": "zh-CN-YunyangNeural", "name": "云扬", "gender": "男", "style": "新闻播报"},
+    {"id": "zh-CN-YunxiaNeural", "name": "云夏", "gender": "男", "style": "小男孩童声"},
+    {"id": "zh-CN-liaoning-XiaobeiNeural", "name": "晓北", "gender": "女", "style": "东北腔"},
+    {"id": "zh-CN-shaanxi-XiaoniNeural", "name": "晓妮", "gender": "女", "style": "陕西腔"},
+    {"id": "zh-HK-HiuGaaiNeural", "name": "曉佳", "gender": "女", "style": "粤语"},
+    {"id": "zh-HK-HiuMaanNeural", "name": "曉曼", "gender": "女", "style": "粤语"},
+    {"id": "zh-HK-WanLungNeural", "name": "雲龍", "gender": "男", "style": "粤语"},
+    {"id": "zh-TW-HsiaoChenNeural", "name": "曉臻", "gender": "女", "style": "台湾腔"},
+    {"id": "zh-TW-YunJheNeural", "name": "雲哲", "gender": "男", "style": "台湾腔"},
+    {"id": "zh-TW-HsiaoYuNeural", "name": "曉雨", "gender": "女", "style": "台湾腔"},
+]
+
+
+def _clone_list() -> list:
+    return [
+        {"name": k, "prompt_text": v["prompt_text"], "audio": os.path.basename(v["audio"])}
+        for k, v in CLONE_PROFILES.items()
+    ]
+
+
+def _gsv_available() -> bool:
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(f"{GSV_URL}/", timeout=3) as r:
+            return r.status < 500
+    except Exception:
+        return False
+
+
+def _tts_available() -> bool:
+    try:
+        import edge_tts
+
+        return True
+    except Exception:
+        return False
+
+
+def _strip_md(text: str) -> str:
+    import re
+
+    text = re.sub(r"```.*?```", "", text, flags=re.S)
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"[#*_>~]", "", text)
+    return text.strip()[:500]
+
+
+def _clone_tts(text: str, profile: dict) -> bytes:
+    import urllib.request
+
+    payload = json.dumps(
+        {
+            "text": text,
+            "text_lang": "zh",
+            "ref_audio_path": profile["audio"],
+            "prompt_text": profile["prompt_text"],
+            "prompt_lang": "zh",
+            "text_split_method": "cut5",
+            "batch_size": 1,
+            "media_type": "wav",
+            "streaming_mode": False,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{GSV_URL}/tts",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=300) as r:
+        if r.status != 200:
+            raise RuntimeError(f"GSV tts failed: {r.status}")
+        return r.read()
+
+
+class TTSIn(BaseModel):
+    text: str
+    voice: str | None = None
+    rate: str | None = "+0%"
+
+
+@app.get("/api/voices")
+def voices():
+    return {"voices": TTS_VOICE_LIB, "clones": _clone_list(), "gsv": _gsv_available()}
+
+
+@app.post("/api/tts")
+async def tts(body: TTSIn):
+    text = _strip_md(body.text or "")
+    if not text:
+        return JSONResponse({"error": "text 为空"}, status_code=400)
+    voice = body.voice or "night"
+    if voice.startswith("clone:"):
+        name = voice[6:]
+        profile = CLONE_PROFILES.get(name)
+        if not profile:
+            return JSONResponse({"error": f"克隆音色不存在: {name}"}, status_code=404)
+        try:
+            return Response(content=_clone_tts(text, profile), media_type="audio/wav")
+        except Exception as e:
+            return JSONResponse({"error": f"克隆合成失败: {e}"}, status_code=502)
+    try:
+        import edge_tts
+    except Exception:
+        return JSONResponse({"error": "edge-tts 未安装"}, status_code=501)
+    vid = _TTS_VOICES.get(voice, voice)
+    try:
+        engine = edge_tts.Communicate(text, vid, rate=body.rate or "+0%")
+        audio = bytearray()
+        async for chunk in engine.stream():
+            if chunk["type"] == "audio":
+                audio.extend(chunk["data"])
+        if not audio:
+            return JSONResponse({"error": "edge-tts 无输出"}, status_code=502)
+        return Response(content=bytes(audio), media_type="audio/mpeg")
+    except Exception as e:
+        return JSONResponse({"error": f"edge-tts 失败: {e}"}, status_code=502)
+
+
+@app.post("/api/clone")
+async def clone_voice(request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    prompt_text = (form.get("prompt_text") or "").strip()
+    audio = form.get("audio")
+    if not name:
+        return JSONResponse({"error": "缺少音色名字"}, status_code=400)
+    if audio is None or not audio.filename:
+        return JSONResponse({"error": "缺少参考音频"}, status_code=400)
+    safe = "".join(c for c in name if c.isalnum() or c in "-_") or "clone"
+    ext = os.path.splitext(audio.filename)[1].lower()
+    if ext not in (".wav", ".mp3", ".flac", ".ogg"):
+        ext = ".wav"
+    path = CLONE_DIR / f"{safe}{ext}"
+    data = await audio.read()
+    if len(data) > 30 * 1024 * 1024:
+        return JSONResponse({"error": "音频过大>30MB"}, status_code=400)
+    path.write_bytes(data)
+    if prompt_text:
+        (CLONE_DIR / f"{safe}.txt").write_text(prompt_text, encoding="utf-8")
+    CLONE_PROFILES[name] = {"audio": str(path), "prompt_text": prompt_text}
+    return {"ok": True, "name": name, "path": path.name}
+
+
+@app.delete("/api/clone")
+async def clone_voice_delete(name: str = ""):
+    profile = CLONE_PROFILES.pop(name, None)
+    if profile:
+        audio = profile.get("audio")
+        if audio and os.path.exists(audio):
+            try:
+                os.remove(audio)
+            except Exception:
+                pass
+        base = os.path.splitext(audio)[0] if audio else str(CLONE_DIR / name)
+        txt = base + ".txt"
+        if os.path.exists(txt):
+            try:
+                os.remove(txt)
+            except Exception:
+                pass
+        return {"ok": True, "deleted": name}
+    return {"ok": False, "error": "音色不存在"}
+
+
+# --- 训练：环境检测 / 一键安装 / 一键训练 ---
+@app.get("/api/env")
+def env_detect():
+    return training.detect_env()
+
+
+@app.post("/api/setup")
+def setup_start():
+    return training.setup_start()
+
+
+@app.get("/api/setup/status")
+def setup_status():
+    return training.setup_status()
+
+
+@app.post("/api/train")
+async def train_start(request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    audio = form.get("audio")
+    if not name:
+        return JSONResponse({"error": "缺少模型名称"}, status_code=400)
+    if audio is None or not audio.filename:
+        return JSONResponse({"error": "缺少录音文件"}, status_code=400)
+    try:
+        s1_epochs = int(form.get("s1_epochs") or 20)
+        s2_epochs = int(form.get("s2_epochs") or 60)
+    except Exception:
+        s1_epochs, s2_epochs = 20, 60
+    raw_work = BASE / "train_data" / "raw_work"
+    raw_work.mkdir(parents=True, exist_ok=True)
+    ext = os.path.splitext(audio.filename)[1].lower() or ".wav"
+    if ext not in (".wav", ".mp3", ".m4a", ".flac", ".ogg"):
+        ext = ".wav"
+    safe = "".join(c for c in name if c.isalnum() or c in "-_") or "voice"
+    path = raw_work / f"{safe}_{int(time.time())}{ext}"
+    data = await audio.read()
+    if len(data) > 200 * 1024 * 1024:
+        return JSONResponse({"error": "录音过大>200MB"}, status_code=400)
+    path.write_bytes(data)
+    return training.train_start(name, str(path), s1_epochs, s2_epochs)
+
+
+@app.get("/api/train/status")
+def train_status():
+    return training.train_status()
+
+
+@app.get("/api/hermes/status")
+def hermes_status():
+    return hermes_setup.hermes_status()
+
+
+@app.post("/api/hermes/deploy")
+def hermes_deploy():
+    return hermes_setup.deploy_hermes()
+
+
+@app.get("/api/hermes/deploy/status")
+def hermes_deploy_status():
+    return hermes_setup.deploy_status()
 
 
 def _looks_like_task(msg: str) -> bool:
@@ -671,10 +955,41 @@ if __name__ == "__main__":
     import uvicorn
 
     print(
-        "🌙 Cyber Nyx v0.6 · "
+        "🌙 Cyber Nyx v0.7 · "
         f"llm={'在线' if LLM_ON else '本地演示'} · "
         f"core={core.name} · "
         f"memory={'universal-agent-memory' if MEM_ENABLED else 'none'}"
     )
-    print("   访问 http://127.0.0.1:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    if "--gui" in sys.argv or getattr(sys, "frozen", False):
+        import socket
+        import threading
+
+        import webview
+
+        def _free_port() -> int:
+            s = socket.socket()
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+            s.close()
+            return port
+
+        port = _free_port()
+        print(f"   内部服务 http://127.0.0.1:{port} （独立窗口模式）")
+        threading.Thread(
+            target=lambda: uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning"),
+            daemon=True,
+        ).start()
+        webview.create_window(
+            "Cyber Nyx · 小夜",
+            f"http://127.0.0.1:{port}/",
+            width=1080,
+            height=720,
+            min_size=(920, 640),
+            background_color="#0d0f17",
+        )
+        webview.start()
+        os._exit(0)
+    else:
+        print("   访问 http://127.0.0.1:8000")
+        uvicorn.run(app, host="0.0.0.0", port=8000)

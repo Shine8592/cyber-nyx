@@ -147,6 +147,57 @@
   .input-bar button:active { transform:scale(.97); }
   .input-bar button svg { width:18px; height:18px; }
 
+  /* 语音：开关 + 音色选择 */
+  .voice-toggle.on { color:var(--accent); border-color:var(--accent); background:var(--accent-tint); }
+  .voice-sel {
+    background:var(--surface-1); border:1px solid var(--line); color:var(--text-2);
+    border-radius:8px; padding:4px 6px; font-size:11px; outline:none; cursor:pointer;
+    max-width:96px; transition: border-color var(--motion-fast) var(--ease-out);
+  }
+  .voice-sel:hover { border-color:var(--accent); }
+  .voice-sel:focus { border-color:var(--accent); }
+  .voice-sel option { background:var(--surface-2); color:var(--text-1); }
+
+  /* 声音克隆：环境检测 / 安装 / 训练 */
+  .env-list { display:flex; flex-direction:column; gap:5px; margin:8px 0 10px; }
+  .env-item { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-2); }
+  .env-item .env-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .env-item.ok .env-dot { background:var(--success); }
+  .env-item.bad .env-dot { background:var(--danger); }
+  .env-item.busy .env-dot { background:var(--accent); }
+  .env-item .env-name { flex-shrink:0; min-width:120px; }
+  .env-item .env-msg { color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .settings-btn {
+    width:100%; margin-top:6px; padding:9px; border:1px solid var(--line); border-radius:8px;
+    background:var(--surface-1); color:var(--text-1); font-size:13px; cursor:pointer;
+    transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+  }
+  .settings-btn:hover { border-color:var(--accent); background:var(--accent-tint); }
+  .settings-btn.primary { background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+  .settings-btn.primary:hover { background:var(--accent-hover); }
+  .settings-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .train-box { margin-top:10px; padding-top:10px; border-top:1px dashed var(--line-soft); }
+  .train-epochs { display:flex; gap:8px; }
+  .train-epochs input {
+    flex:1; background:var(--surface-1); border:1px solid var(--line); border-radius:6px;
+    padding:7px 9px; color:var(--text-1); font-size:13px; outline:none; font-family:inherit;
+  }
+  .progress-wrap { margin-top:10px; }
+  .progress-bar {
+    height:6px; border-radius:3px; background:var(--surface-1); border:1px solid var(--line-soft); overflow:hidden;
+  }
+  .progress-fill {
+    height:100%; width:0%; border-radius:3px; background:linear-gradient(90deg, var(--accent), oklch(80% 0.11 85 / .6));
+    transition: width var(--motion-base) var(--ease-out);
+  }
+  .progress-txt { font-size:11px; color:var(--text-3); margin-top:5px; }
+  .train-log {
+    margin-top:6px; max-height:150px; overflow-y:auto; padding:7px 9px; font-size:10.5px; line-height:1.55;
+    font-family:Consolas, Menlo, monospace; color:var(--text-2);
+    background:var(--surface-1); border:1px solid var(--line-soft); border-radius:6px;
+    scrollbar-width:thin; scrollbar-color: var(--line) transparent; white-space:pre-wrap; word-break:break-all;
+  }
+
   .foot { text-align:center; color:var(--text-3); font-size:11px; padding-bottom:8px; }
 
   /* 侧滑面板：surface 分层，无大阴影 */
@@ -302,6 +353,10 @@
       <button data-mode="companion">陪伴</button>
       <button data-mode="work">工作</button>
     </div>
+    <button class="icon-btn voice-toggle" id="voiceBtn" title="语音开关（微软 / 克隆）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+    </button>
+    <select id="voiceSel" class="voice-sel" title="选择音色"></select>
     <button class="icon-btn" id="setBtn" title="设置：接入内核 / LLM">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>
     </button>
@@ -390,6 +445,46 @@
       <div class="settings-field">
         <label>Provider</label>
         <input id="cfgHermesProvider" placeholder="可选" autocomplete="off">
+      </div>
+      <div class="env-list" id="hermesEnvList"></div>
+      <button class="settings-btn" id="hermesDeployBtn">未检测到 Hermes，点击自动部署</button>
+      <div class="progress-wrap" id="hermesProgress" style="display:none">
+        <div class="progress-txt" id="hermesTxt">准备中…</div>
+        <div class="train-log" id="hermesLog"></div>
+      </div>
+    </div>
+
+    <div class="settings-sec">
+      <h3>声音克隆 · 一键安装 / 一键训练</h3>
+      <div class="env-list" id="envList"></div>
+      <button class="settings-btn" id="envBtn">一键安装环境</button>
+      <div class="progress-wrap" id="setupProgress" style="display:none">
+        <div class="progress-bar"><div class="progress-fill" id="setupFill"></div></div>
+        <div class="progress-txt" id="setupTxt">准备中…</div>
+        <div class="train-log" id="setupLog"></div>
+      </div>
+      <div class="train-box" id="trainBox" style="display:none">
+        <div class="settings-field">
+          <label>声音名称</label>
+          <input id="trainName" placeholder="例如：小爱" autocomplete="off">
+        </div>
+        <div class="settings-field">
+          <label>录音文件（10 秒以上清晰人声，wav / mp3 / m4a）</label>
+          <input id="trainAudio" type="file" accept=".wav,.mp3,.m4a,.flac,.ogg">
+        </div>
+        <div class="settings-field">
+          <label>训练轮数 s1 / s2（4060 默认约 20-30 分钟）</label>
+          <div class="train-epochs">
+            <input id="trainS1" type="number" value="20" min="1" max="100" title="s1 轮数">
+            <input id="trainS2" type="number" value="60" min="1" max="200" title="s2 轮数">
+          </div>
+        </div>
+        <button class="settings-btn primary" id="trainBtn">开始训练</button>
+      </div>
+      <div class="progress-wrap" id="trainProgress" style="display:none">
+        <div class="progress-bar"><div class="progress-fill" id="trainFill"></div></div>
+        <div class="progress-txt" id="trainTxt">准备中…</div>
+        <div class="train-log" id="trainLog"></div>
       </div>
     </div>
 
@@ -676,6 +771,8 @@
     setPanel.classList.add('open');
     setMsg.textContent = '';
     loadSettings();
+    refreshEnv();
+    refreshHermes();
   };
   document.getElementById('setClose').onclick = () => setPanel.classList.remove('open');
   setPanel.addEventListener('click', (e) => { if (e.target === setPanel) setPanel.classList.remove('open'); });
@@ -805,8 +902,11 @@
                 }
                 typing.remove();
                 setEmotion(d.emotion);
-                // 收到完整回复后用打字机效果展示
-                setTimeout(() => typeBubble(d.reply || fullReply, 'nyx'), 250);
+                const finalReply = d.reply || fullReply;
+                setTimeout(() => {
+                  typeBubble(finalReply, 'nyx');
+                  setTimeout(() => speak(finalReply), 700);
+                }, 250);
                 return;
               }
             }
@@ -825,13 +925,265 @@
         }
         typing.remove();
         setEmotion(d.emotion);
-        setTimeout(() => typeBubble(d.reply, 'nyx'), 250);
+        const finalReply = d.reply;
+        setTimeout(() => {
+          typeBubble(finalReply, 'nyx');
+          setTimeout(() => speak(finalReply), 700);
+        }, 250);
       }
     } catch(e) {
       typing.remove();
       addBubble('唔，网络有些不乖呢，主人稍后再试好不好~', 'nyx');
     }
   }
+
+  // --- 语音：微软 edge-tts + GPT-SoVITS 克隆 ---
+  const VOICE_KEY = 'cyber_nyx_voice';
+  const VOICE_ON_KEY = 'cyber_nyx_voice_on';
+  let voiceEnabled = localStorage.getItem(VOICE_ON_KEY) === '1';
+  let curVoice = localStorage.getItem(VOICE_KEY) || 'night';
+  let audioEl = null;
+  const voiceBtn = document.getElementById('voiceBtn');
+  const voiceSel = document.getElementById('voiceSel');
+
+  function refreshVoices() {
+    fetch('/api/voices').then(r => r.json()).then(d => {
+      const prev = voiceSel.value || curVoice;
+      voiceSel.innerHTML = '';
+      (d.voices || []).forEach(v => {
+        const o = document.createElement('option');
+        o.value = v.id;
+        o.textContent = v.name + '·微软' + (v.gender === '女' ? '女' : '男');
+        voiceSel.appendChild(o);
+      });
+      (d.clones || []).forEach(c => {
+        const o = document.createElement('option');
+        o.value = 'clone:' + c.name;
+        o.textContent = c.name + '·克隆';
+        voiceSel.appendChild(o);
+      });
+      if (prev) voiceSel.value = prev;
+    }).catch(() => {});
+  }
+
+  function speak(text) {
+    if (!voiceEnabled || !text) return;
+    const clean = text.replace(/```[\s\S]*?```/g, '').replace(/[#*_`>\[\]()]/g, '').replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    if (audioEl) { audioEl.pause(); audioEl = null; }
+    fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 500), voice: curVoice }),
+    }).then(r => { if (!r.ok) throw new Error('tts ' + r.status); return r.blob(); })
+      .then(b => {
+        audioEl = new Audio(URL.createObjectURL(b));
+        audioEl.onended = () => { URL.revokeObjectURL(audioEl.src); audioEl = null; };
+        audioEl.play().catch(() => {});
+      }).catch(() => {});
+  }
+
+  voiceBtn.onclick = () => {
+    voiceEnabled = !voiceEnabled;
+    localStorage.setItem(VOICE_ON_KEY, voiceEnabled ? '1' : '0');
+    voiceBtn.classList.toggle('on', voiceEnabled);
+  };
+  voiceSel.addEventListener('change', e => {
+    curVoice = e.target.value;
+    localStorage.setItem(VOICE_KEY, curVoice);
+  });
+  refreshVoices();
+
+  // --- 声音克隆：环境检测 / 一键安装 / 一键训练 ---
+  const envList = document.getElementById('envList');
+  const envBtn = document.getElementById('envBtn');
+  const setupProgress = document.getElementById('setupProgress');
+  const setupFill = document.getElementById('setupFill');
+  const setupTxt = document.getElementById('setupTxt');
+  const setupLog = document.getElementById('setupLog');
+  const trainBox = document.getElementById('trainBox');
+  const trainBtn = document.getElementById('trainBtn');
+  const trainProgress = document.getElementById('trainProgress');
+  const trainFill = document.getElementById('trainFill');
+  const trainTxt = document.getElementById('trainTxt');
+  const trainLog = document.getElementById('trainLog');
+  let envTimer = null;
+
+  function envItem(name, ok, msg) {
+    const div = document.createElement('div');
+    div.className = 'env-item ' + (ok ? 'ok' : 'bad');
+    div.innerHTML = '<span class="env-dot"></span><span class="env-name"></span><span class="env-msg"></span>';
+    div.querySelector('.env-name').textContent = name;
+    div.querySelector('.env-msg').textContent = msg || (ok ? '正常' : '缺失');
+    return div;
+  }
+
+  function refreshEnv() {
+    fetch('/api/env').then(r => r.json()).then(d => {
+      envList.innerHTML = '';
+      envList.appendChild(envItem('Python 3.10+', d.python_ok, d.python));
+      envList.appendChild(envItem('edge-tts', d.edge_tts, '微软语音引擎'));
+      const torchMsg = d.torch ? (d.gpu ? d.gpu : 'CPU 版 ' + d.torch) : '未安装';
+      envList.appendChild(envItem('PyTorch', !!d.torch, torchMsg));
+      envList.appendChild(envItem('GPT-SoVITS 引擎', d.gsv, '训练核心'));
+      envList.appendChild(envItem('ffmpeg', d.ffmpeg, '音频切片'));
+      const wmsg = d.weights_ok ? '预训练模型齐备' : '缺 ' + d.weights_missing.length + ' 个';
+      envList.appendChild(envItem('预训练模型', d.weights_ok, wmsg));
+      if (d.models && d.models.length) {
+        const m = document.createElement('div');
+        m.className = 'env-item ok';
+        m.innerHTML = '<span class="env-dot"></span><span class="env-name">已训练</span>';
+        m.querySelector('.env-name').textContent = '已训练模型';
+        const span = document.createElement('span');
+        span.className = 'env-msg';
+        span.textContent = d.models.join('、');
+        m.appendChild(span);
+        envList.appendChild(m);
+      }
+      trainBox.style.display = d.ready ? 'block' : 'none';
+      envBtn.style.display = d.ready ? 'none' : 'block';
+      envBtn.disabled = !!d.ready;
+    }).catch(() => {});
+  }
+
+  const hermesEnvList = document.getElementById('hermesEnvList');
+  const hermesDeployBtn = document.getElementById('hermesDeployBtn');
+  const hermesProgress = document.getElementById('hermesProgress');
+  const hermesTxt = document.getElementById('hermesTxt');
+  const hermesLog = document.getElementById('hermesLog');
+  let hermesTimer = null;
+
+  function refreshHermes() {
+    fetch('/api/hermes/status').then(r => r.json()).then(d => {
+      hermesEnvList.innerHTML = '';
+      if (d.installed) {
+        hermesEnvList.appendChild(envItem('Hermes 内核', true, d.version || '已安装'));
+        hermesEnvList.appendChild(envItem('路径', true, d.bin));
+        hermesDeployBtn.style.display = 'none';
+      } else {
+        hermesEnvList.appendChild(envItem('Hermes 内核', false, '未安装'));
+        hermesDeployBtn.style.display = 'block';
+        hermesDeployBtn.textContent = '自动安装部署 Hermes（约 5~20 分钟）';
+      }
+    }).catch(() => {});
+  }
+
+  hermesDeployBtn.onclick = () => {
+    hermesDeployBtn.disabled = true;
+    hermesProgress.style.display = 'block';
+    fetch('/api/hermes/deploy', { method: 'POST' }).then(r => r.json()).then(d => {
+      if (!d.ok && d.error) {
+        hermesTxt.textContent = d.error;
+        hermesDeployBtn.disabled = false;
+        return;
+      }
+      hermesTimer = setInterval(() => {
+        fetch('/api/hermes/deploy/status').then(r => r.json()).then(s => {
+          hermesTxt.textContent = s.phase || '';
+          tailLog(hermesLog, s.log || []);
+          if (!s.running) {
+            clearInterval(hermesTimer);
+            if (s.ok) {
+              hermesTxt.textContent = 'Hermes 部署完成 ✓';
+              refreshHermes();
+            } else {
+              hermesTxt.textContent = '部署失败：' + (s.error || '未知错误');
+              hermesDeployBtn.disabled = false;
+            }
+          }
+        }).catch(() => {});
+      }, 1500);
+    }).catch(() => { hermesDeployBtn.disabled = false; });
+  };
+
+  function tailLog(el, lines) {
+    if (!el) return;
+    el.textContent = lines.slice(-60).join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  envBtn.onclick = () => {
+    envBtn.disabled = true;
+    setupProgress.style.display = 'block';
+    fetch('/api/setup', { method: 'POST' }).then(() => {
+      envTimer = setInterval(() => {
+        fetch('/api/setup/status').then(r => r.json()).then(s => {
+          setupTxt.textContent = s.phase + ' · ' + Math.round(s.progress || 0) + '%';
+          setupFill.style.width = (s.progress || 0) + '%';
+          tailLog(setupLog, s.log || []);
+          if (!s.running) {
+            clearInterval(envTimer);
+            if (s.ok) {
+              setupTxt.textContent = '环境安装完成 ✓';
+              setupFill.style.width = '100%';
+              refreshEnv();
+              refreshVoices();
+            } else {
+              setupTxt.textContent = '安装失败：' + (s.error || '未知错误');
+              envBtn.disabled = false;
+            }
+          }
+        }).catch(() => {});
+      }, 1200);
+    }).catch(() => { envBtn.disabled = false; });
+  };
+
+  function trainStagePct(log) {
+    const map = [
+      ['切片', 12], ['ASR', 24], ['转写', 24], ['预处理', 38],
+      ['s2', 78], ['s1', 95], ['部署', 100], ['完成', 100],
+    ];
+    let pct = 4, hit = null;
+    (log || []).forEach(line => {
+      map.forEach(([kw, v]) => { if (line.includes(kw)) { hit = kw; pct = v; } });
+    });
+    if (hit) return pct;
+    return pct;
+  }
+
+  trainBtn.onclick = () => {
+    const name = document.getElementById('trainName').value.trim();
+    const file = document.getElementById('trainAudio').files[0];
+    if (!name) { alert('请填写声音名称'); return; }
+    if (!file) { alert('请选择录音文件'); return; }
+    const fd = new FormData();
+    fd.append('name', name);
+    fd.append('audio', file);
+    fd.append('s1_epochs', document.getElementById('trainS1').value || '20');
+    fd.append('s2_epochs', document.getElementById('trainS2').value || '60');
+    trainBtn.disabled = true;
+    trainProgress.style.display = 'block';
+    trainTxt.textContent = '提交中…';
+    fetch('/api/train', { method: 'POST', body: fd }).then(r => r.json()).then(d => {
+      if (!d.ok) { trainTxt.textContent = '启动失败：' + (d.error || ''); trainBtn.disabled = false; return; }
+      const timer = setInterval(() => {
+        fetch('/api/train/status').then(r => r.json()).then(s => {
+          const pct = s.progress || trainStagePct(s.log);
+          trainTxt.textContent = (s.stage || '训练中') + ' · ' + Math.round(pct) + '%';
+          trainFill.style.width = pct + '%';
+          tailLog(trainLog, s.log || []);
+          if (!s.running) {
+            clearInterval(timer);
+            trainBtn.disabled = false;
+            if (s.ok) {
+              trainTxt.textContent = '训练完成 ✓ 已在音色列表注册「' + s.name + '·克隆」';
+              trainFill.style.width = '100%';
+              document.getElementById('trainName').value = '';
+              document.getElementById('trainAudio').value = '';
+              refreshVoices();
+              refreshEnv();
+              voiceSel.value = 'clone:' + s.name;
+              curVoice = voiceSel.value;
+              localStorage.setItem(VOICE_KEY, curVoice);
+            } else {
+              trainTxt.textContent = '训练失败：' + (s.error || '见日志');
+            }
+          }
+        }).catch(() => {});
+      }, 2000);
+    }).catch(() => { trainTxt.textContent = '启动失败'; trainBtn.disabled = false; });
+  };
+  voiceBtn.classList.toggle('on', voiceEnabled);
 
   document.getElementById('send').onclick = send;
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });

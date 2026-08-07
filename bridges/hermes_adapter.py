@@ -11,6 +11,7 @@ Hermes 升级 → 只改这个 adapter 的调用细节，cyber-nyx 主体不动�
 import os
 import shutil
 import subprocess
+import sys
 
 from bridges.agent_core import AgentCore, ToolResult
 
@@ -28,6 +29,11 @@ class HermesCore(AgentCore):
         self.model = model or os.environ.get("NYX_HERMES_MODEL", "")
         self.provider = provider or os.environ.get("NYX_HERMES_PROVIDER", "")
 
+    def _args(self, extra):
+        if sys.platform == "win32" and self.bin.lower().endswith((".cmd", ".bat")):
+            return ["cmd", "/c", self.bin, *extra]
+        return [self.bin, *extra]
+
     def task_style(self) -> str:
         return (
             "主人会给出自然语言请求。请把它表述成一个 Hermes 能执行的、"
@@ -44,7 +50,7 @@ class HermesCore(AgentCore):
         prompt = task
         if persona_inject:
             prompt = f"{persona_inject}\n任务：{task}"
-        cmd = [self.bin, "-z", prompt]
+        cmd = self._args(["-z", prompt])
         if self.model:
             cmd += ["-m", self.model]
         if self.provider:
@@ -80,7 +86,7 @@ class HermesCore(AgentCore):
     def health(self) -> bool:
         try:
             r = subprocess.run(
-                [self.bin, "--version"], capture_output=True, text=True, timeout=10
+                self._args(["--version"]), capture_output=True, text=True, timeout=10
             )
             return r.returncode == 0
         except Exception:

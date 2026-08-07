@@ -9,6 +9,10 @@ build/
 .env
 config.json
 
-# 内嵌记忆引擎运行时生成物（不进版本库）
-vendor/universal-agent-memory/scripts/__pycache__/
-vendor/universal-agent-memory/scripts/.opencode/
+# 训练运行时（自动生成/下载）
+GPT_SoVITS/
+tools/
+train_data/*
+!train_data/train_one.py
+runtime/
+_test_*.log

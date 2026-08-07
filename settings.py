@@ -12,9 +12,15 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    APP_DIR = Path(__file__).resolve().parent
+
+CONFIG_PATH = APP_DIR / "config.json"
 
 DEFAULTS = {
     "llm": {"base": "", "key": "", "model": "gpt-4o-mini"},
