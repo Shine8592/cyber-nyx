@@ -178,7 +178,7 @@ async def lifespan(_: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="Cyber Nyx", version="0.7.0", lifespan=lifespan)
+app = FastAPI(title="Cyber Nyx", version="0.9.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -197,7 +197,7 @@ SYSTEM_PROMPT = (
     f"你的人设：{'、'.join(nyx.persona.get('personality', []))}。"
     "说话温柔神秘，称呼对方为主人，句尾常用'呀/呢/~'。"
     "如果主人要求执行任务（查资料/写代码/改文件等），先简单确认，"
-    "说明你会交给 Hermes 内核处理，再用你的语气回应。保持人设一致。"
+    "说明你会交给内核（Agent 内核）处理，再用你的语气回应。保持人设一致。"
     + nyx.get_mode_prompt()
 )
 
@@ -268,7 +268,7 @@ def settings_get():
                 "online": core.name == "hermes",
             },
             "memory": {"enabled": MEM_ENABLED},
-            "version": "0.7.0",
+            "version": "0.9.0",
         }
     )
 
@@ -322,7 +322,7 @@ def settings_set(body: dict):
             "llm": {"configured": LLM_ON},
             "hermes": {"online": core.name == "hermes", "bin": getattr(core, "bin", "")},
             "message": "设置已保存并生效"
-            + ("，Hermes 内核已接入" if core.name == "hermes" else "，Hermes 内核未检测到"),
+            + ("，Agent 内核已接入" if core.name == "hermes" else "，Agent 内核未检测到"),
         }
     )
 
@@ -1021,7 +1021,7 @@ if __name__ == "__main__":
     import uvicorn
 
     print(
-        "🌙 Cyber Nyx v0.7 · "
+        "🌙 Cyber Nyx v0.9 · "
         f"llm={'在线' if LLM_ON else '本地演示'} · "
         f"core={core.name} · "
         f"memory={'universal-agent-memory' if MEM_ENABLED else 'none'}"

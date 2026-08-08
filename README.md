@@ -171,9 +171,9 @@ Nyx 语音输出**默认走微软免费 API（edge-tts）电子音，开箱即�
 - 设置面板 → 「语音输入」→ 一键安装 `sherpa-onnx` 中文识别（约 70MB，1~2 分钟）
 - 安装后点击输入框旁的 🎤 按钮即可按住说话识别
 
-### 六、可选装：Hermes 内核（Agent 工具链）
+### 六、可选装：Agent 内核（工具链）
 
-- 设置面板 → 「Hermes 内核」→ 一键自动部署（约 5~20 分钟）
+- 设置面板 → 「Agent 内核」→ 一键自动部署（约 5~20 分钟）
 - 部署后 Nyx 具备终端 / 文件 / 网页 / 记忆等 Agent 能力
 
 ### 访问令牌（鉴权）
@@ -190,8 +190,8 @@ Nyx 语音输出**默认走微软免费 API（edge-tts）电子音，开箱即�
 | `NYX_API_BASE` | OpenAI 兼容 API 地址 | - |
 | `NYX_API_KEY` | API 密钥 | - |
 | `NYX_MODEL` | 模型名称 | gpt-4o-mini |
-| `NYX_HERMES_BIN` | Hermes CLI 路径 | 自动探测 |
-| `NYX_HERMES_MODEL` | Hermes 模型 | - |
+| `NYX_HERMES_BIN` | 内核 CLI 路径 | 自动探测 |
+| `NYX_HERMES_MODEL` | 内核模型 | - |
 | `NYX_STREAM` | 启用 SSE 流式 | 0 |
 | `NYX_RETRY_MAX` | LLM 重试次数 | 3 |
 | `NYX_RETRY_BASE` | 重试基础秒数 | 1.0 |
@@ -243,9 +243,9 @@ GET  /api/stt/status          # STT 引擎/模型安装状态
 POST /api/stt/setup           # 一键安装 STT（sherpa-onnx zipformer-zh）
 ```
 
-### Hermes 部署（v0.8）
+### 内核部署（v0.8）
 ```
-POST /api/hermes/deploy         # 一键部署 Hermes 内核
+POST /api/hermes/deploy         # 一键部署 Agent 内核
 GET  /api/hermes/deploy/status  # 部署进度
 ```
 
@@ -295,7 +295,24 @@ Cyber Nyx 由「**夜之女神项目组**」三位开发者共创：
 | **疯ˣ** | 合创人 / 核心开发 | [MUC260](https://github.com/MUC260) |
 | **可怕食肉动物** | 合创人 / 核心开发 | [BCZZB](https://github.com/BCZZB) |
 
-三人小组以模块化协作推进：拟人 UI、Hermes 内核桥接、记忆系统、语音交互各司其职，主创把关整体方向。
+三人小组以模块化协作推进：拟人 UI、Agent 内核桥接、记忆系统、语音交互各司其职，主创把关整体方向。
+
+---
+
+## 🙏 鸣谢
+
+本项目基于 **Hermes Agent** 进行二次开发——其强大的 Agent 工具链（终端 / 文件 / 网页 / 记忆 / 技能 / 定时任务）是 Nyx「赛博伙伴」能力的底层基础。在此向 Hermes Agent 项目及其开发者致以诚挚感谢。
+
+同时感谢以下开源项目为 Nyx 提供的能力支撑：
+
+| 项目 | 用途 |
+|---|---|
+| Hermes Agent | 内核：Agent 工具链与执行能力 |
+| edge-tts | 微软免费语音合成（默认电子音） |
+| GPT-SoVITS v2 | 个性化声音克隆引擎（可选装） |
+| sherpa-onnx | 本地语音识别引擎（STT，可选装） |
+| universal-agent-memory | 跨会话记忆引擎（内嵌） |
+| FastAPI / Uvicorn | Web 服务框架 |
 
 ---
 

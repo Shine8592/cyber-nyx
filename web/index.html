@@ -350,7 +350,7 @@
     <svg class="moon-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
     <div class="brand">
       <h1>Cyber Nyx · 小夜</h1>
-      <p>夜之女神 · 赛博助手 · Hermes 内核</p>
+      <p>夜之女神 · 赛博助手</p>
     </div>
     <div class="status"><span class="dot"></span><span id="mode">连接中</span></div>
     <div class="mode-switch" id="modeSwitch" title="切换工作 / 陪伴模式">
@@ -397,7 +397,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
     </button>
   </div>
-  <div class="foot">Cyber Nyx v0.7 · 小夜 · 历史恢复 / 记忆面板 / WS 实时关心 / 模式切换</div>
+  <div class="foot">Cyber Nyx v0.9 · 小夜 · 本地 STT 语音输入 / 声音克隆 / 记忆面板 / WS 实时关心 / 模式切换</div>
 </div>
 
 <div class="memory-panel" id="memoryPanel">
@@ -440,21 +440,21 @@
     </div>
 
     <div class="settings-sec">
-      <h3>Hermes 内核</h3>
+      <h3>Agent 内核</h3>
       <div class="settings-field">
         <label>可执行路径（留空 = 自动探测）</label>
-        <input id="cfgHermesBin" placeholder="hermes 或 /usr/local/lib/hermes-agent/venv/bin/hermes" autocomplete="off">
+        <input id="cfgHermesBin" placeholder="内核可执行文件路径" autocomplete="off">
       </div>
       <div class="settings-field">
         <label>模型</label>
-        <input id="cfgHermesModel" placeholder="默认随 Hermes" autocomplete="off">
+        <input id="cfgHermesModel" placeholder="默认随内核" autocomplete="off">
       </div>
       <div class="settings-field">
         <label>Provider</label>
         <input id="cfgHermesProvider" placeholder="可选" autocomplete="off">
       </div>
       <div class="env-list" id="hermesEnvList"></div>
-      <button class="settings-btn" id="hermesDeployBtn">未检测到 Hermes，点击自动部署</button>
+      <button class="settings-btn" id="hermesDeployBtn">未检测到内核，点击自动部署</button>
       <div class="progress-wrap" id="hermesProgress" style="display:none">
         <div class="progress-txt" id="hermesTxt">准备中…</div>
         <div class="train-log" id="hermesLog"></div>
@@ -560,7 +560,7 @@
   const modeEl = document.getElementById('mode');
 
   fetch('/api/status').then(r=>r.json()).then(d => {
-    if (d.core === 'hermes') modeEl.textContent = 'Hermes 内核·记忆在线';
+    if (d.core === 'hermes') modeEl.textContent = 'Agent 内核·记忆在线';
     else modeEl.textContent = '本地演示';
   }).catch(()=>{});
 
@@ -752,7 +752,7 @@
   document.getElementById('memClose').onclick = () => memPanel.classList.remove('open');
   memPanel.addEventListener('click', (e) => { if (e.target === memPanel) memPanel.classList.remove('open'); });
 
-  // --- 设置面板：接入 LLM / Hermes 内核 ---
+  // --- 设置面板：接入 LLM / Agent 内核 ---
   const setPanel = document.getElementById('settingsPanel');
   const setStatus = document.getElementById('setStatus');
   const setMsg = document.getElementById('setMsg');
@@ -765,7 +765,7 @@
 
   function renderSetStatus(d) {
     const llmTxt = d.llm.configured ? '<span class="ok">LLM 已配置</span>' : '<span class="bad">LLM 未配置（本地演示）</span>';
-    const hTxt = d.hermes.online ? '<span class="ok">Hermes 内核在线</span>' : '<span class="bad">Hermes 内核离线</span>';
+    const hTxt = d.hermes.online ? '<span class="ok">Agent 内核在线</span>' : '<span class="bad">Agent 内核离线</span>';
     const mTxt = d.memory.enabled ? '<span class="ok">记忆系统在线</span>' : '<span class="bad">记忆系统离线</span>';
     setStatus.innerHTML = llmTxt + '<br>' + hTxt + '<br>' + mTxt;
   }
@@ -1075,13 +1075,13 @@
     fetch('/api/hermes/status').then(r => r.json()).then(d => {
       hermesEnvList.innerHTML = '';
       if (d.installed) {
-        hermesEnvList.appendChild(envItem('Hermes 内核', true, d.version || '已安装'));
+        hermesEnvList.appendChild(envItem('Agent 内核', true, d.version || '已安装'));
         hermesEnvList.appendChild(envItem('路径', true, d.bin));
         hermesDeployBtn.style.display = 'none';
       } else {
-        hermesEnvList.appendChild(envItem('Hermes 内核', false, '未安装'));
+        hermesEnvList.appendChild(envItem('Agent 内核', false, '未安装'));
         hermesDeployBtn.style.display = 'block';
-        hermesDeployBtn.textContent = '自动安装部署 Hermes（约 5~20 分钟）';
+        hermesDeployBtn.textContent = '自动安装部署内核（约 5~20 分钟）';
       }
     }).catch(() => {});
   }
@@ -1102,7 +1102,7 @@
           if (!s.running) {
             clearInterval(hermesTimer);
             if (s.ok) {
-              hermesTxt.textContent = 'Hermes 部署完成 ✓';
+              hermesTxt.textContent = '内核部署完成 ✓';
               refreshHermes();
             } else {
               hermesTxt.textContent = '部署失败：' + (s.error || '未知错误');

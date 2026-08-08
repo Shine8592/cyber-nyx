@@ -236,10 +236,10 @@ def _deploy_worker():
             app_settings.save(cfg)
             os.environ["NYX_HERMES_BIN"] = bin_path
             HERMES_STATE.update(phase="完成", ok=True, version=ver)
-            _log(f"=== Hermes 部署完成: {ver} ===")
+            _log(f"=== Agent 内核部署完成: {ver} ===")
             _log(f"路径: {bin_path}")
-            _log("提示：新安装的 Hermes 需配置模型。请运行 hermes setup 或在")
-            _log("设置页填写 LLM API 后，Hermes 内核即生效。")
+            _log("提示：新安装的内核需配置模型。请运行 hermes setup 或在")
+            _log("设置页填写 LLM API 后，Agent 内核即生效。")
         else:
             raise RuntimeError("安装完成但未找到 hermes 可执行文件，请重试")
     except Exception as e:
