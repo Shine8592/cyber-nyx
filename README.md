@@ -8,7 +8,7 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![v0.8](https://img.shields.io/badge/version-0.8-blue.svg)]()
+[![v0.9](https://img.shields.io/badge/version-0.9-blue.svg)]()
 
 ---
 
@@ -80,8 +80,9 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 - **WebSocket 实时推送**：`/ws?session_id=xxx` 长连接，主动关心由服务端实时推送（每 30 秒检查），前端 WS 断线自动回退 5 分钟轮询
 - **防重复关怀**：首次问候 / 空闲提醒 / 情绪关怀触发后视为一次互动，不再刷屏
 
-### 🔟 声音克隆 + 语音合成（v0.8，疯ˣ 交付）
+### 🔟 声音克隆 + 语音合成（v0.8）
 - **GPT-SoVITS v2 声音克隆**：一键安装 / 一键训练 / 一键推理（`training.py`），上传少量音频即可克隆你自己的声音
+- **选装提示**：安装前明确提示模型体积 / 下载量 / 磁盘占用 / 预计耗时，默认免费微软 edge-tts 电子音无需安装（v0.9）
 - **国内镜像自动降级**：预训练权重 hf-mirror → HF、GPT-SoVITS 源码 ghfast.top → GitHub、PyPI 清华 → 官方，国内网络开箱即用
 - **edge-tts 即时语音**：无需训练即可用微软 Edge 语音合成（`/api/tts`）
 - **声音档案管理**：`/api/voices` 列出可用音色，`/api/clone` 管理克隆档案，前端可视化面板
@@ -89,6 +90,12 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 ### 1️⃣1️⃣ Hermes Agent 自动部署（v0.8）
 - **一键部署**：`hermes_setup.py` 自动探测本机 Hermes CLI，未安装则自动安装（uv / Python 3.11 / Node / ffmpeg / PortableGit）
 - **内核直连**：部署完成后自动写入 `config.json`，Nyx 直接以 Hermes 为内核运行（`/api/hermes/deploy`）
+
+### 1️⃣2️⃣ 本地语音输入 STT（v0.9，疯ˣ 交付）
+- **本地离线识别**：`sherpa-onnx` + zipformer-zh 14M 流式中文模型，纯 CPU 推理，无 GPU/联网依赖
+- **一键安装**：引擎清华源安装 + 模型 GitHub Release 下载，自动解压，约 1~2 分钟
+- **麦克风识别**：前端 🎤 按钮按住说话 → 浏览器降采样 16kHz 单声道 → `/api/stt` 识别填入输入框
+- **与 TTS 形成完整语音闭环**：语音输入 → 对话 → 语音输出
 
 ---
 
@@ -110,23 +117,71 @@ Nyx（希腊神话夜之女神）代表神秘、温柔与陪伴。本项目将�
 
 ## 📦 快速开始
 
+### 🔧 环境要求
+
+| 项 | 最低要求 | 推荐 |
+|---|---|---|
+| 操作系统 | Windows 10 / macOS / Linux | Windows 11 |
+| Python | 3.10+ | 3.11/3.12 |
+| 内存 | 4 GB | 8 GB+（训练时 8 GB+） |
+| 磁盘 | 1 GB 可用 | 10 GB（含可选装模型） |
+| 浏览器 | Chrome / Edge 任意现代浏览器 | Edge / Chrome |
+| GPU（可选） | 无 GPU 可运行 | NVIDIA 4GB+（个性化声音克隆加速） |
+
+### 一、安装（3 分钟）
+
 ```bash
 git clone https://github.com/Shine8592/cyber-nyx.git
 cd cyber-nyx
 pip install -r requirements.txt
+```
+
+> 💡 国内网络加速：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+
+### 二、启动
+
+```bash
 python app.py
 ```
 
-访问 http://127.0.0.1:8000
+启动后访问 **http://127.0.0.1:8000**
 
-> 🔌 **接入 LLM / Hermes 内核**：打开页面右上角 ⚙️ 设置，填入 API 地址与密钥即可接入 LLM（保存即生效，无需重启）；Hermes 内核需要运行用户有 CLI 执行权限，命令清单见 [docs/hermes-setup.md](docs/hermes-setup.md)。
+- 默认**浏览器模式**，本机访问即用
+- 想用**独立窗口模式**（应用软件外观）：`python app.py --gui`
+- 首次访问若要求令牌：见下方「访问令牌」
 
-> 🔑 **访问令牌（鉴权）**：启动时自动生成 `nyx-...` 令牌（写入 `config.json` 并在日志打印），所有 `/api/*` 需要 `Authorization: Bearer <token>`；首次打开页面会要求输入令牌（浏览器记住）。测试环境用 `NYX_AUTH_DISABLE=1` 关闭，自定义令牌用环境变量 `NYX_AUTH_TOKEN` 或 `config.json` 的 `auth.token`。
+### 三、接入大脑（LLM，必做才能正常对话）
 
-> 🎙️ **语音功能（v0.8）**：
-> - **即时合成**：`edge-tts` 无需训练，开箱即用（页面右上角可试听）
-> - **声音克隆**：在「声音克隆」面板上传 10~60 秒音频 → 一键安装环境（自动下载 GPT-SoVITS 权重）→ 一键训练 → 生成专属声音
-> - 训练需要显卡（NVIDIA GPU + CUDA），CPU 训练速度较慢；国内网络已内置镜像自动切换
+打开页面右上角 **⚙️ 设置** → 填入 API 地址与密钥 → 保存即生效，无需重启。
+
+- **OpenAI 兼容 API**：任意 `base_url` + `api_key` + 模型名
+- 没有 Key 时 Nyx 进入「本地演示模式」，回复为预设人设模板，无法真正对话
+
+### 四、可选装：语音（默认免费微软电子音）
+
+Nyx 语音输出**默认走微软免费 API（edge-tts）电子音，开箱即用无需安装**，仅需在页面右上角打开 🎙️ 语音开关。
+
+**想要个性化声音克隆（GPT-SoVITS v2）才是可选安装**：
+1. 设置面板 → 「声音克隆 · 一键安装」→ 点击后**先弹提示框**，明示将下载约 2.2GB、占用磁盘 4.4GB、约 20-40 分钟
+2. 确认后自动安装（国内镜像自动切换）
+3. 安装完成 → 上传 10~60 秒人声 → 一键训练 → 生成专属音色（需 NVIDIA GPU 加速，CPU 慢速）
+
+### 五、可选装：本地语音输入（STT 听写）
+
+- 设置面板 → 「语音输入」→ 一键安装 `sherpa-onnx` 中文识别（约 70MB，1~2 分钟）
+- 安装后点击输入框旁的 🎤 按钮即可按住说话识别
+
+### 六、可选装：Hermes 内核（Agent 工具链）
+
+- 设置面板 → 「Hermes 内核」→ 一键自动部署（约 5~20 分钟）
+- 部署后 Nyx 具备终端 / 文件 / 网页 / 记忆等 Agent 能力
+
+### 访问令牌（鉴权）
+
+- 首次启动自动生成 `nyx-...` 令牌，写入 `config.json` 并在控制台日志打印
+- 首次打开页面要求输入令牌（浏览器会记住）
+- 测试环境关闭：`NYX_AUTH_DISABLE=1 python app.py`
+- 自定义令牌：环境变量 `NYX_AUTH_TOKEN` 或 `config.json` 的 `auth.token`
 
 ### 环境变量
 
@@ -174,14 +229,18 @@ Response: text/event-stream
 GET /api/status
 ```
 
-### 语音（v0.8）
+### 语音（v0.8 / v0.9）
 ```
-GET  /api/voices          # 列出可用音色（edge-tts + 克隆档案）
-POST /api/tts             # 语音合成
-POST /api/clone           # 上传音频创建声音克隆档案
-DELETE /api/clone         # 删除克隆档案
-POST /api/train           # 一键训练（GPT-SoVITS v2）
-GET  /api/train/status    # 训练进度
+GET  /api/voices              # 列出可用音色（edge-tts + 克隆档案）
+POST /api/tts                 # 语音合成（edge-tts 即时合成）
+POST /api/clone               # 上传音频创建声音克隆档案
+DELETE /api/clone             # 删除克隆档案
+POST /api/train               # 一键训练（GPT-SoVITS v2）
+GET  /api/train/status        # 训练进度
+GET  /api/train/install-info  # 声音克隆选装资源说明（下载量/磁盘/耗时，选装前提示）
+POST /api/stt                 # 本地语音识别（16kHz 单声道 WAV → 文本）
+GET  /api/stt/status          # STT 引擎/模型安装状态
+POST /api/stt/setup           # 一键安装 STT（sherpa-onnx zipformer-zh）
 ```
 
 ### Hermes 部署（v0.8）
@@ -218,7 +277,9 @@ GET  /api/setup/status # 设置状态
 - [x] WebSocket 主动关心实时推送（v0.7）
 - [x] 语音交互基础版（edge-tts 合成 + GPT-SoVITS v2 声音克隆，v0.8）
 - [x] Hermes Agent 一键部署（v0.8）
-- [ ] 声音克隆全自动训练增强（STT 语音输入）
+- [x] 本地语音输入（sherpa-onnx 中文 STT，一键安装 + 麦克风识别，v0.9）
+- [x] 声音克隆选装提示（安装前明示资源占用，v0.9）
+- [ ] 声音克隆全自动训练增强（训练进度可视化 / 多音色切换 / 克隆质量优化）
 - [ ] 桌面悬浮数字形象（Live2D）
 - [ ] 多平台发布（Win/macOS/Linux）
 
