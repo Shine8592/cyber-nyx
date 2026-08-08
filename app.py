@@ -907,6 +907,12 @@ def setup_start():
     return training.setup_start()
 
 
+@app.get("/api/train/install-info")
+def train_install_info():
+    """GPT-SoVITS 个性化克隆选装说明（资源成本），供前端选装前提示用户。"""
+    return training.install_info()
+
+
 @app.get("/api/setup/status")
 def setup_status():
     return training.setup_status()

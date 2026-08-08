@@ -1258,7 +1258,8 @@
     return new Blob([buf], { type: 'audio/wav' });
   }
 
-  envBtn.onclick = () => {
+  // 启动一键安装环境（含进度轮询；被 envBtn 两处复用）
+  function startSetup() {
     envBtn.disabled = true;
     setupProgress.style.display = 'block';
     fetch('/api/setup', { method: 'POST' }).then(() => {
@@ -1282,6 +1283,31 @@
         }).catch(() => {});
       }, 1200);
     }).catch(() => { envBtn.disabled = false; });
+  }
+
+  envBtn.onclick = () => {
+    // 选装前先拉取资源说明，提示用户确认（默认走免费微软 edge-tts 电子音）
+    fetch('/api/train/install-info').then(r => r.json()).then(info => {
+      const lines = [
+        '📊 ' + (info.name || 'GPT-SoVITS v2') + '（声音克隆引擎）',
+        '说明：' + (info.desc || ''),
+        '',
+        '默认语音：' + (info.default || '微软免费 edge-tts 电子音，无需安装'),
+        '下载量：约 ' + ((info.download_mb || 0) / 1024).toFixed(1) + ' GB',
+        '磁盘占用：约 ' + ((info.disk_mb || 0) / 1024).toFixed(1) + ' GB',
+        '内存需求：约 ' + (info.ram_mb || 4096) / 1024 + ' GB',
+        '预计耗时：约 ' + (info.est_minutes || 20) + '-40 分钟',
+        '硬件：' + (info.gpu_recommend || '推荐 NVIDIA 显卡 4GB+'),
+        '⚠️ ' + (info.warn || ''),
+        '',
+        '确认安装个性化声音克隆吗？（仅个性化需要，可随时跳过）',
+      ].join('\n');
+      if (!confirm(lines)) { return; }
+      startSetup();
+    }).catch(() => {
+      // info 拉取失败时仍允许直接安装（不阻塞）
+      startSetup();
+    });
   };
 
   function trainStagePct(log) {

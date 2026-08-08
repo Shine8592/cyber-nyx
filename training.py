@@ -356,6 +356,35 @@ def _ver_ge(ver, target):
         return False
 
 
+def install_info() -> dict:
+    """GPT-SoVITS 个性化克隆的选装资源说明（供前端选装前提示用户）。
+
+    默认语音输出走微软免费 edge-tts（电子音，零成本），本信息仅用于
+    「用户决定是否选装 GPT-SoVITS 个性化克隆」时的事前告知。
+    """
+    gpu = False
+    try:
+        import subprocess as sp
+        r = sp.run(["nvidia-smi"], capture_output=True, timeout=10)
+        gpu = r.returncode == 0
+    except Exception:
+        gpu = False
+    # 预训练权重总大小（MB）
+    total_mb = sum(w["size"] for w in WEIGHTS)
+    return {
+        "name": "GPT-SoVITS v2",
+        "desc": "中文 TTS 声音克隆引擎（个性化音色，需录音训练）",
+        "default": "不选装时使用免费微软 edge-tts 电子音",
+        "download_mb": round(total_mb + 300),  # 权重 ~1.9GB + 源码 ~300MB
+        "disk_mb": round(total_mb + 2500),      # 权重 + 源码 + PyTorch + venv
+        "gpu_detect": gpu,
+        "gpu_recommend": "推荐 NVIDIA 显卡 4GB+（无则 CPU 慢速训练）",
+        "est_minutes": 20,
+        "ram_mb": 4096,
+        "warn": "选装将下载约 2-3GB 并占用磁盘 4-5GB，耗时约 20-40 分钟",
+    }
+
+
 def setup_start():
     if SETUP_STATE["running"]:
         return {"ok": False, "error": "安装已在进行中"}
