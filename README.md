@@ -144,11 +144,11 @@ pip install -r requirements.txt
 python app.py
 ```
 
-启动后访问 **http://127.0.0.1:8000**
+**默认打开独立 GUI 桌面窗口（「Cyber Nyx · 小夜」）**，即软件形态：
 
-- 默认**浏览器模式**，本机访问即用
-- 想用**独立窗口模式**（应用软件外观）：`python app.py --gui`
-- 首次访问若要求令牌：见下方「访问令牌」
+- 想要**浏览器模式**（`http://127.0.0.1:8000`，可局域网访问）：`python app.py --web`
+- GUI 模式只监听本机 `127.0.0.1`，无需访问令牌
+- 本机未安装 `pywebview` 时自动降级为浏览器模式（并打印提示），`pip install -r requirements.txt` 已包含该依赖
 
 ### 三、接入大脑（LLM，必做才能正常对话）
 

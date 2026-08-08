@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # Cyber Nyx · 三人共创：主创聆听花瓣雨 · 合创疯ˣ · 合创可怕食肉动物
-"""Cyber Nyx — FastAPI 拟人助手服务（v0.7：历史恢复 + 记忆面板 + WS 推送）
+"""Cyber Nyx — FastAPI 拟人助手服务（v0.9：本地 STT + 默认 GUI 窗口）
 
 启动：
-    python app.py                                  # 演示模式
+    python app.py                                  # 默认独立 GUI 窗口
+    python app.py --web                            # 浏览器模式（http://127.0.0.1:8000）
     NYX_HERMES_MODEL=... python app.py             # 启用 Hermes 内核
     NYX_STREAM=1 python app.py                     # 启用流式输出
-
-访问： http://127.0.0.1:8000
 """
 
 import asyncio
@@ -47,9 +46,34 @@ else:
 # 启动时加载 config.json → 环境变量（环境变量优先，不覆盖）
 app_settings.load_to_env()
 
+
+def _gui_requested() -> bool:
+    """运行模式判定：默认 GUI 独立窗口；`--web` 强制浏览器模式。
+
+    - `--web`：强制浏览器模式（支持局域网访问，需访问令牌）
+    - `--gui`：强制 GUI 窗口（兼容旧参数）
+    - 默认：GUI 窗口（frozen 打包 或 本机装有 pywebview）
+    - 本机未装 pywebview 时自动降级为浏览器模式（不崩溃）
+    """
+    if "--web" in sys.argv:
+        return False
+    if "--gui" in sys.argv:
+        return True
+    if getattr(sys, "frozen", False):
+        return True
+    try:
+        import webview  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+# GUI 窗口模式只监听 127.0.0.1，无需令牌
+RUN_GUI = _gui_requested()
+
 # --- 鉴权：访问令牌（NYX_AUTH_DISABLE=1 可关闭，测试用） ---
-# GUI 独立窗口模式只监听 127.0.0.1，无需令牌
-AUTH_DISABLED = os.environ.get("NYX_AUTH_DISABLE", "0") == "1" or getattr(sys, "frozen", False) or "--gui" in sys.argv
+AUTH_DISABLED = os.environ.get("NYX_AUTH_DISABLE", "0") == "1" or RUN_GUI
 
 
 def _ensure_auth_token() -> str:
@@ -1003,7 +1027,7 @@ if __name__ == "__main__":
         f"memory={'universal-agent-memory' if MEM_ENABLED else 'none'}"
     )
 
-    if "--gui" in sys.argv or getattr(sys, "frozen", False):
+    if RUN_GUI:
         import socket
         import threading
 

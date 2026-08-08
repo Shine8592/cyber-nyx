@@ -3,6 +3,7 @@ uvicorn>=0.24.0
 pydantic>=2.0.0
 edge-tts>=7.2.8
 sherpa-onnx>=1.10.0
+pywebview>=5.0
 
 # --- 内嵌记忆引擎（vendor/universal-agent-memory，自研记忆系统 v3.0.2） ---
 sentence-transformers>=2.2.0
