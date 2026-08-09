@@ -88,20 +88,39 @@
   /* 月徽（签名细节） */
   .avatar-zone { display:flex; justify-content:center; padding:26px 0 14px; }
   .avatar {
-    width:76px; height:76px; border-radius:50%;
-    color:var(--accent);
-    background: radial-gradient(circle at 32% 30%, var(--surface-2), var(--surface-1));
-    border:1px solid var(--line);
+    width:120px; height:120px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
-    transition: transform var(--motion-base) var(--ease-out), filter var(--motion-base) var(--ease-out);
+    animation: avatarFloat 4.5s var(--ease-out) infinite;
+    transition: filter var(--motion-base) var(--ease-out);
   }
-  .avatar svg { width:38px; height:38px; }
-  .avatar.happy { transform: translateY(-2px); }
-  .avatar.sad { filter: brightness(.85); }
-  .avatar.curious { transform: rotate(-6deg); }
-  .avatar.angry { transform: translateY(1px); filter: brightness(.9) saturate(1.2); }
-  .avatar.surprised { transform: scale(1.06); }
-  .avatar.shy { transform: translateY(3px) scale(.97); }
+  .avatar svg { width:100px; height:100px; overflow:visible; }
+  .avatar .face { transform-origin:50% 50%; transition: transform var(--motion-base) var(--ease-out); }
+  /* 呼吸浮动 */
+  @keyframes avatarFloat {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+  /* 眨眼（眼睛元素 blink-group，每 4.5 秒闭合一次） */
+  .blink { transform-origin:50% 50%; animation: blinkAnim 4.5s infinite; }
+  @keyframes blinkAnim {
+    0%, 92%, 100% { transform: scaleY(1); }
+    95% { transform: scaleY(0.08); }
+    97% { transform: scaleY(1); }
+  }
+  /* 表情：整体位移 + 眉眼嘴的状态 */
+  .avatar.happy .face { transform: translateY(-2px); }
+  .avatar.happy .brow { transform: translateY(-1px); }
+  .avatar.sad .face { transform: translateY(2px); }
+  .avatar.sad .eye { transform: translateY(1px); }
+  .avatar.curious .face { transform: rotate(-4deg); }
+  .avatar.angry .face { transform: translateY(1px); }
+  .avatar.angry .brow { transform: rotate(8deg); }
+  .avatar.surprised .face { transform: scale(1.04); }
+  .avatar.shy .face { transform: translateY(3px) scale(.96); }
+  .avatar.shy .blush { opacity:.5; }
+  .avatar .blush { transition: opacity var(--motion-base) var(--ease-out); }
+  .avatar .brow { transition: transform var(--motion-base) var(--ease-out); }
+  .avatar .eye { transition: transform var(--motion-base) var(--ease-out); }
 
   /* 聊天区 */
   .chat {
@@ -371,10 +390,42 @@
   </header>
 
   <div class="avatar-zone">
-    <div class="avatar" id="avatar">
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-        <path d="M16.8 4.4l.7 1.5 1.5.7-1.5.7-.7 1.5-.7-1.5-1.5-.7 1.5-.7z"/>
+    <div class="avatar" id="avatar" title="小夜">
+      <!-- SVG 小夜形象（月亮精灵）：表情通过 .face/.eye/.brow/.mouth 联动 -->
+      <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- 背景光晕 -->
+        <circle cx="60" cy="60" r="52" fill="oklch(80% 0.11 85 / 0.08)"/>
+        <!-- 月牙身体（背面，露出两尖） -->
+        <path d="M60 8 A 46 46 0 0 1 60 112 A 40 40 0 0 1 60 8 Z"
+              fill="oklch(80% 0.11 85 / 0.18)"/>
+        <!-- 主体圆脸 -->
+        <circle cx="60" cy="60" r="40" fill="url(#nyxFace)" stroke="oklch(86% 0.10 85 / 0.35)" stroke-width="1.5"/>
+        <defs>
+          <radialGradient id="nyxFace" cx="38%" cy="32%" r="80%">
+            <stop offset="0%" stop-color="oklch(92% 0.06 85)"/>
+            <stop offset="100%" stop-color="oklch(78% 0.12 85)"/>
+          </radialGradient>
+        </defs>
+        <g class="face">
+          <!-- 刘海星星 -->
+          <path d="M60 24 L63.5 31 L71 31.6 L65.3 36.2 L67.3 43.5 L60 39.4 L52.7 43.5 L54.7 36.2 L49 31.6 L56.5 31 Z"
+                fill="oklch(97% 0.02 85)" opacity=".9"/>
+          <!-- 眉毛 -->
+          <path class="brow" d="M40 46 Q48 41 56 44" stroke="oklch(45% 0.06 60)" stroke-width="2.4" stroke-linecap="round"/>
+          <path class="brow" d="M64 44 Q72 41 80 46" stroke="oklch(45% 0.06 60)" stroke-width="2.4" stroke-linecap="round"/>
+          <!-- 眼睛 -->
+          <g class="blink">
+            <circle class="eye" cx="48" cy="54" r="5.6" fill="oklch(22% 0.02 260)"/>
+            <circle cx="50" cy="52.4" r="1.8" fill="#fff" opacity=".9"/>
+            <circle class="eye" cx="72" cy="54" r="5.6" fill="oklch(22% 0.02 260)"/>
+            <circle cx="74" cy="52.4" r="1.8" fill="#fff" opacity=".9"/>
+          </g>
+          <!-- 腮红 -->
+          <ellipse class="blush" cx="38" cy="66" rx="7" ry="4.5" fill="oklch(70% 0.16 25 / .35)"/>
+          <ellipse class="blush" cx="82" cy="66" rx="7" ry="4.5" fill="oklch(70% 0.16 25 / .35)"/>
+          <!-- 嘴 -->
+          <path class="mouth" d="M54 68 Q60 74 66 68" stroke="oklch(55% 0.12 40)" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+        </g>
       </svg>
     </div>
   </div>
@@ -871,9 +922,41 @@
     return b;
   }
 
+  // --- 表情联动：驱动 SVG 小夜形象的嘴型/眉毛/状态 ---
+  const MOUTH_SHAPES = {
+    neutral: 'M54 68 Q60 74 66 68',
+    happy:   'M52 66 Q60 78 68 66',
+    sad:     'M54 72 Q60 66 66 72',
+    curious: 'M54 69 Q60 72 66 68',
+    angry:   'M54 71 L60 68 L66 71',
+    surprised:'M58 66 Q60 76 62 66',
+    shy:     'M55 69 Q60 72 65 69',
+  };
+  const BROW_SHAPES = {
+    neutral:  'M40 46 Q48 41 56 44',
+    happy:    'M40 46 Q48 42 56 44',
+    sad:      'M40 44 Q48 48 56 45',
+    curious:  'M40 45 Q48 39 56 43',
+    angry:    'M40 43 L48 46 L56 44',
+    surprised:'M40 44 Q48 41 56 45',
+    shy:      'M40 47 Q48 44 56 46',
+  };
   function setEmotion(e) {
     avatar.className = 'avatar';
     if (e && e !== 'neutral') avatar.classList.add(e);
+    // 动态切换嘴型与眉毛（找不到时回退 neutral）
+    const key = MOUTH_SHAPES[e] ? e : 'neutral';
+    const mouth = avatar.querySelector('.mouth');
+    const brows = avatar.querySelectorAll('.brow');
+    if (mouth) mouth.setAttribute('d', MOUTH_SHAPES[key]);
+    if (brows.length === 2) {
+      // 左眉 / 右眉按基础位置微调
+      const b = BROW_SHAPES[key];
+      brows[0].setAttribute('d', b);
+      // 右眉对称
+      const right = b.replace(/(\d+)/g, (m, x) => String(120 - Number(x)));
+      brows[1].setAttribute('d', right);
+    }
   }
 
   async function send() {
@@ -1369,6 +1452,54 @@
 
   document.getElementById('send').onclick = send;
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+  // --- 数字形象：默认 SVG 小夜，检测到 Live2D 模型自动升级 ---
+  // 用户把 .model3.json + 纹理放入 web/assets/live2d/ 即自动启用真 Live2D，
+  // 否则保持轻量的 SVG 月亮精灵（零依赖、离线可用）。
+  (function initAvatar() {
+    // 供 Live2D 渲染层调用：情绪切换（与 SVG 共用同一入口）
+    window.__nyxSetEmotion = setEmotion;
+
+    // 探测本地 Live2D 模型（后端 /api/avatar/live2d 检查 assets/live2d/）
+    fetch('/api/avatar/live2d').then(r => r.json()).then(d => {
+      if (!d.enabled || !d.models || !d.models.length) throw new Error('no live2d');
+      const modelName = d.models[0]; // 取第一个 .model3.json（若有多个按文件名序）
+      const modelUrl = '/assets/live2d/' + modelName;
+      // 按需加载渲染库：优先本地 vendor（web/assets/live2d/pixi.min.js + pixi-live2d-display），
+      // 未放置时尝试公共 CDN；均失败则保持 SVG 形象
+      const loadJs = (src) => new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = src; s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+      const localPixi = '/assets/live2d/pixi.min.js';
+      const localL2d = '/assets/live2d/pixi-live2d-display.min.js';
+      const cdnPixi = 'https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js';
+      const cdnL2d = 'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/index.min.js';
+      Promise.all([
+        loadJs(localPixi).catch(() => loadJs(cdnPixi)),
+        loadJs(localL2d).catch(() => loadJs(cdnL2d)),
+      ]).then(() => {
+        const app = new PIXI.Application({ view: document.createElement('canvas'), transparent: true, autoStart: true, resizeTo: window });
+        const l2d = document.getElementById('avatar');
+        l2d.innerHTML = '';
+        l2d.style.width = '160px'; l2d.style.height = '160px';
+        l2d.appendChild(app.view);
+        PIXI.live2d.Live2DModel.from(modelUrl).then(model => {
+          app.stage.addChild(model);
+          model.scale.set(0.22);
+          model.x = 80; model.y = 110;
+          // 表情 → Live2D 参数（若有 motion/expression 则驱动）
+          window.__nyxSetEmotion = (e) => {
+            setEmotion(e); // SVG 仍同步（隐藏但保留切换）
+            if (model.internalModel && model.internalModel.motionManager) {
+              try { model.internalModel.motionManager.expressionManager?.setExpression(e); } catch (_) {}
+            }
+          };
+        });
+      }).catch(() => { /* 库加载失败：保持 SVG 形象，静默 */ });
+    }).catch(() => { /* 无 Live2D 模型：保持 SVG 形象 */ });
+  })();
 </script>
 </body>
 </html>

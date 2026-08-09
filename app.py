@@ -221,6 +221,20 @@ if _ASSETS_DIR.is_dir():
     app.mount("/assets", _StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
 
 
+# --- 数字形象：Live2D 模型探测（无模型则保持内置 SVG 形象） ---
+@app.get("/api/avatar/live2d")
+def avatar_live2d():
+    """探测 web/assets/live2d/ 下是否有 Live2D 模型，返回模型文件路径列表。
+
+    StaticFiles 不提供目录列表，故由后端探测；用户放入 .model3.json 即自动启用。
+    """
+    l2d_dir = _ASSETS_DIR / "live2d"
+    models = []
+    if l2d_dir.is_dir():
+        models = sorted(p.name for p in l2d_dir.iterdir() if p.suffix == ".json")
+    return {"enabled": bool(models), "models": models}
+
+
 # --- 会话管理端点 ---
 
 
