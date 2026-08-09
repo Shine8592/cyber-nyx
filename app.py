@@ -224,14 +224,31 @@ if _ASSETS_DIR.is_dir():
 # --- 数字形象：Live2D 模型探测（无模型则保持内置 SVG 形象） ---
 @app.get("/api/avatar/live2d")
 def avatar_live2d():
-    """探测 web/assets/live2d/ 下是否有 Live2D 模型，返回模型文件路径列表。
+    """探测 web/assets/live2d/ 下的所有 Live2D 模型，返回模型列表。
 
-    StaticFiles 不提供目录列表，故由后端探测；用户放入 .model3.json 即自动启用。
+    支持子目录与根目录的 .model3.json；每个模型带 id / 名称 / 相对路径。
+    StaticFiles 不提供目录列表，故由后端扫描。
     """
     l2d_dir = _ASSETS_DIR / "live2d"
     models = []
+    # 友好名称映射（按目录名识别的常见官方示例模型）
+    NAME_MAP = {
+        "kei_basic_free": "Kei（基础）",
+        "kei_vowels_pro": "Kei（元音对口型）",
+        "miara_pro_t04": "Miyara",
+        "root": "Miyara",
+    }
     if l2d_dir.is_dir():
-        models = sorted(p.name for p in l2d_dir.iterdir() if p.suffix == ".json")
+        # 递归扫描所有 .model3.json（支持根目录与多层子目录如 kei/kei_basic_free/）
+        for f in sorted(l2d_dir.rglob("*.model3.json")):
+            rel = f.relative_to(l2d_dir)
+            # id 用父目录名（kei_basic_free），path 用相对路径（含子目录）
+            parent_name = f.parent.name if f.parent != l2d_dir else "root"
+            models.append({
+                "id": f"{parent_name}-{f.stem}",
+                "name": NAME_MAP.get(parent_name, parent_name),
+                "path": rel.as_posix(),
+            })
     return {"enabled": bool(models), "models": models}
 
 

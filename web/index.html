@@ -93,6 +93,19 @@
     animation: avatarFloat 4.5s var(--ease-out) infinite;
     transition: filter var(--motion-base) var(--ease-out);
   }
+  /* Live2D 悬浮形象：固定在右下角（桌宠风格），不占聊天区 */
+  .l2d-float {
+    position: fixed; right: 20px; bottom: 18px; z-index: 50;
+    width: 260px; height: 300px; pointer-events: none;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .l2d-float canvas { width: 260px; height: 300px; }
+  .l2d-float .l2d-hint {
+    position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: var(--text-3); white-space: nowrap; opacity: .0;
+    transition: opacity var(--motion-base) var(--ease-out); pointer-events: none;
+  }
+  .l2d-float:hover .l2d-hint { opacity: 1; }
   .avatar svg { width:100px; height:100px; overflow:visible; }
   .avatar .face { transform-origin:50% 50%; transition: transform var(--motion-base) var(--ease-out); }
   /* 呼吸浮动 */
@@ -379,6 +392,9 @@
     <button class="icon-btn voice-toggle" id="voiceBtn" title="语音开关（微软 / 克隆）">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
     </button>
+    <select id="avatarSel" class="voice-sel" title="选择形象">
+      <option value="svg">🌙 月亮精灵</option>
+    </select>
     <select id="voiceSel" class="voice-sel" title="选择音色"></select>
     <button class="icon-btn" id="setBtn" title="设置：接入内核 / LLM">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>
@@ -449,6 +465,11 @@
     </button>
   </div>
   <div class="foot">Cyber Nyx v0.9 · 小夜 · 本地 STT 语音输入 / 声音克隆 / 记忆面板 / WS 实时关心 / 模式切换</div>
+</div>
+
+<!-- Live2D 悬浮形象（右下角桌宠，仅在检测到模型时启用） -->
+<div class="l2d-float" id="l2dFloat" style="display:none">
+  <div class="l2d-hint">小夜</div>
 </div>
 
 <div class="memory-panel" id="memoryPanel">
@@ -1079,10 +1100,33 @@
     }).then(r => { if (!r.ok) throw new Error('tts ' + r.status); return r.blob(); })
       .then(b => {
         audioEl = new Audio(URL.createObjectURL(b));
-        audioEl.onended = () => { URL.revokeObjectURL(audioEl.src); audioEl = null; };
+        // 对口型：语音播放时驱动 Live2D 嘴型（若当前形象支持）
+        audioEl.onplay = () => { if (window.__nyxLipSync && window.__nyxLipSync.enabled) window.__nyxLipSync.bind(audioEl); };
+        audioEl.onended = () => {
+          if (window.__nyxLipSync) window.__nyxLipSync.stop();
+          URL.revokeObjectURL(audioEl.src); audioEl = null;
+        };
         audioEl.play().catch(() => {});
       }).catch(() => {});
   }
+
+  // 全局：合成并播放语音 + 对口型（供 Live2D 欢迎语等场景调用，不受 voiceEnabled 限制）
+  window.__nyxSpeakWithLips = function(text, force) {
+    if (!text) return;
+    const clean = text.replace(/```[\s\S]*?```/g, '').replace(/[#*_`>\[\]()]/g, '').replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 300), voice: curVoice }),
+    }).then(r => { if (!r.ok) throw new Error('tts ' + r.status); return r.blob(); })
+      .then(b => {
+        const a = new Audio(URL.createObjectURL(b));
+        a.onplay = () => { if (window.__nyxLipSync && window.__nyxLipSync.enabled) window.__nyxLipSync.bind(a); };
+        a.onended = () => { if (window.__nyxLipSync) window.__nyxLipSync.stop(); URL.revokeObjectURL(a.src); };
+        a.play().catch(() => {});
+      }).catch(() => {});
+  };
 
   voiceBtn.onclick = () => {
     voiceEnabled = !voiceEnabled;
@@ -1456,49 +1500,203 @@
   // --- 数字形象：默认 SVG 小夜，检测到 Live2D 模型自动升级 ---
   // 用户把 .model3.json + 纹理放入 web/assets/live2d/ 即自动启用真 Live2D，
   // 否则保持轻量的 SVG 月亮精灵（零依赖、离线可用）。
+  // --- 数字形象：默认 SVG 月亮精灵，可切换到任意 Live2D 模型 ---
+  // 模型探测：后端 /api/avatar/live2d 扫描 assets/live2d/（含子目录）
+  // 形象列表：SVG（内置）+ 所有 .model3.json；切换即时生效；kei 模型支持 MotionSync 对口型
   (function initAvatar() {
-    // 供 Live2D 渲染层调用：情绪切换（与 SVG 共用同一入口）
     window.__nyxSetEmotion = setEmotion;
+    const avatarSel = document.getElementById('avatarSel');
+    const floatBox = document.getElementById('l2dFloat');
+    const topAvatar = document.getElementById('avatar');
+    let libsReady = false;   // 渲染库是否加载完成
+    let l2dApp = null;       // 当前 PIXI 应用
+    let currentModel = 'svg'; // 当前选中形象 id
+    let available = [];       // 可用模型列表
 
-    // 探测本地 Live2D 模型（后端 /api/avatar/live2d 检查 assets/live2d/）
-    fetch('/api/avatar/live2d').then(r => r.json()).then(d => {
-      if (!d.enabled || !d.models || !d.models.length) throw new Error('no live2d');
-      const modelName = d.models[0]; // 取第一个 .model3.json（若有多个按文件名序）
-      const modelUrl = '/assets/live2d/' + modelName;
-      // 按需加载渲染库：优先本地 vendor（web/assets/live2d/pixi.min.js + pixi-live2d-display），
-      // 未放置时尝试公共 CDN；均失败则保持 SVG 形象
-      const loadJs = (src) => new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = src; s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
-      const localPixi = '/assets/live2d/pixi.min.js';
-      const localL2d = '/assets/live2d/pixi-live2d-display.min.js';
-      const cdnPixi = 'https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js';
-      const cdnL2d = 'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/index.min.js';
-      Promise.all([
-        loadJs(localPixi).catch(() => loadJs(cdnPixi)),
-        loadJs(localL2d).catch(() => loadJs(cdnL2d)),
-      ]).then(() => {
-        const app = new PIXI.Application({ view: document.createElement('canvas'), transparent: true, autoStart: true, resizeTo: window });
-        const l2d = document.getElementById('avatar');
-        l2d.innerHTML = '';
-        l2d.style.width = '160px'; l2d.style.height = '160px';
-        l2d.appendChild(app.view);
-        PIXI.live2d.Live2DModel.from(modelUrl).then(model => {
-          app.stage.addChild(model);
-          model.scale.set(0.22);
-          model.x = 80; model.y = 110;
-          // 表情 → Live2D 参数（若有 motion/expression 则驱动）
-          window.__nyxSetEmotion = (e) => {
-            setEmotion(e); // SVG 仍同步（隐藏但保留切换）
-            if (model.internalModel && model.internalModel.motionManager) {
-              try { model.internalModel.motionManager.expressionManager?.setExpression(e); } catch (_) {}
-            }
+    // 渲染库串行加载：pixi → CubismCore → cubism4 适配
+    const loadJs = (src) => new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    const localPixi = '/assets/live2d/pixi.min.js';
+    const localCore = '/assets/live2d/live2dcubismcore.min.js';
+    const localAdapter = '/assets/live2d/cubism4.min.js';
+    const cdnPixi = 'https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js';
+    const cdnCore = 'https://cdn.jsdelivr.net/npm/live2dcubismcore@1.0.0/live2dcubismcore.min.js';
+    const cdnAdapter = 'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js';
+
+    function ensureLibs() {
+      if (libsReady) return Promise.resolve(true);
+      return loadJs(localPixi).catch(() => loadJs(cdnPixi))
+        .then(() => loadJs(localCore).catch(() => loadJs(cdnCore)))
+        .then(() => loadJs(localAdapter).catch(() => loadJs(cdnAdapter)))
+        .then(() => { libsReady = true; return true; })
+        .catch(() => { libsReady = false; return false; });
+    }
+
+    // 回到 SVG 月亮精灵形象
+    function showSvg() {
+      if (l2dApp) {
+        try { l2dApp.destroy(true); } catch (e) {}
+        l2dApp = null;
+      }
+      floatBox.style.display = 'none';
+      floatBox.innerHTML = '';
+      topAvatar.style.display = 'flex';
+      window.__nyxSetEmotion = setEmotion;
+    }
+
+    // 加载并显示指定 Live2D 模型（path 为相对 /assets/live2d/ 的路径）
+    function loadL2D(model) {
+      ensureLibs().then(ok => {
+        if (!ok) { showSvg(); return; }
+        if (l2dApp) { try { l2dApp.destroy(true); } catch (e) {} l2dApp = null; }
+        floatBox.style.display = 'flex';
+        floatBox.innerHTML = '<div class="l2d-hint">小夜</div>';
+        topAvatar.style.display = 'none';
+        const W = 260, H = 300;
+        const app = new PIXI.Application({ width: W, height: H, transparent: true, autoStart: true, antialias: true });
+        l2dApp = app;
+        floatBox.appendChild(app.view);
+        const url = '/assets/live2d/' + model.path;
+        PIXI.live2d.Live2DModel.from(url).then(m => {
+          app.stage.addChild(m);
+          // 测量模型原始高度，按容器 85% 缩放
+          let rawH = 2324;
+          try {
+            m.scale.set(1);
+            const bb2 = m.getBounds();
+            rawH = (bb2 && bb2.height) || 2324;
+          } catch (e) {}
+          const scale = (H * 0.85) / rawH;
+          m.scale.set(scale);
+          const fitAndCenter = () => {
+            let b;
+            try { b = m.getBounds(); } catch (e) { return; }
+            m.x = (W - b.width) / 2;
+            m.y = (H - b.height) + 8 - (b.y - m.y);
           };
+          fitAndCenter();
+          setTimeout(fitAndCenter, 400);
+          // --- 对口型（Lip Sync）：Web Audio 分析语音能量 → ParamMouthOpenY ---
+          // 模型必须含 ParamMouthOpenY 参数（kei 有；miara 没有则自动跳过）
+          const coreModel = m.internalModel && m.internalModel.coreModel;
+          const mouthIdx = coreModel && coreModel._parameterIds
+            ? coreModel._parameterIds.indexOf('ParamMouthOpenY') : -1;
+          const hasMouth = mouthIdx >= 0;
+          // 声音能量 → 口型开合（0~1）；smooth 平滑系数
+          let mouthAudio = null, mouthCtx = null, mouthAnalyser = null, mouthData = null;
+          let mouthLevel = 0, mouthTimer = null, audioEndTimer = null;
+
+          function startLipSync(mediaEl) {
+            if (!hasMouth || !mediaEl) return;
+            try {
+              if (!mouthCtx) {
+                mouthCtx = new (window.AudioContext || window.webkitAudioContext)();
+                mouthAnalyser = mouthCtx.createAnalyser();
+                mouthAnalyser.fftSize = 256;
+                mouthData = new Uint8Array(mouthAnalyser.frequencyBinCount);
+              }
+              if (mouthAudio) { try { mouthAudio.disconnect(); } catch (e) {} }
+              mouthAudio = mouthCtx.createMediaElementSource(mediaEl);
+              mouthAudio.connect(mouthAnalyser);
+              mouthAnalyser.connect(mouthCtx.destination);
+              clearInterval(mouthTimer);
+              mouthTimer = setInterval(() => {
+                mouthAnalyser.getByteFrequencyData(mouthData);
+                // 平均能量（取中低频段）
+                let sum = 0, n = Math.min(16, mouthData.length);
+                for (let i = 0; i < n; i++) sum += mouthData[i];
+                const v = sum / (n * 255);
+                mouthLevel += (v - mouthLevel) * 0.4;   // 平滑
+                setMouth(mouthLevel);
+              }, 50);
+              // 音频结束恢复闭嘴
+              clearTimeout(audioEndTimer);
+              audioEndTimer = setTimeout(() => {
+                clearInterval(mouthTimer); mouthTimer = null;
+                setMouth(0);
+              }, (mediaEl.duration || 1) * 1000 + 500);
+            } catch (e) { /* 不阻塞 */ }
+          }
+          function setMouth(v) {
+            try { coreModel._parameterValues[mouthIdx] = Math.max(0, Math.min(1, v || 0)); } catch (e) {}
+          }
+          function stop() {
+            clearInterval(mouthTimer); mouthTimer = null;
+            clearTimeout(audioEndTimer); audioEndTimer = null;
+            setMouth(0);
+          }
+          // 暴露口型控制：供全局 speak() 播放语音时调用
+          window.__nyxLipSync = {
+            enabled: hasMouth,
+            bind: (el) => startLipSync(el),
+            stop,
+          };
+
+          // 欢迎动作 + 中文欢迎语（触发对口型体验）
+          setTimeout(() => {
+            // 播放一段 TTS 欢迎语，用语音驱动口型
+            try {
+              window.__nyxSpeakWithLips && window.__nyxSpeakWithLips('小夜来啦，今晚也陪你呀');
+            } catch (e) {}
+            // 尝试播放模型自带动作（若有）
+            try {
+              const groups = m.internalModel.motionManager.defMotionData || {};
+              const keys = Object.keys(groups).filter(k => Object.keys(groups[k] || {}).length);
+              const anyGrp = groups[''] ? [''] : keys;
+              if (anyGrp.length) {
+                const g = anyGrp[0];
+                const motions = Object.keys(groups[g] || {});
+                if (motions.length) m.motion(g, motions[0], 0, 0);
+              }
+            } catch (e) {}
+          }, 900);
+          // 情绪 → Live2D 表情参数
+          window.__nyxSetEmotion = (e) => {
+            setEmotion(e);
+            try { m.internalModel.motionManager.expressionManager?.setExpression(e); } catch (_) {}
+          };
+          window.__nyxModel = m;   // 调试暴露
+        }).catch(() => { showSvg(); });
+      });
+    }
+
+    // 切换形象：'svg' 或模型 id
+    function switchAvatar(id) {
+      if (id === currentModel) return;
+      currentModel = id;
+      try { localStorage.setItem('nyx_avatar', id); } catch (e) {}
+      if (id === 'svg') { showSvg(); return; }
+      const target = available.find(x => x.id === id);
+      if (target) loadL2D(target);
+    }
+
+    // 初始化：拉取模型列表 → 填充下拉 → 应用上次选择
+    fetch('/api/avatar/live2d').then(r => r.json()).then(d => {
+      available = d.models || [];
+      if (available.length) {
+        available.forEach(m => {
+          const o = document.createElement('option');
+          o.value = m.id;
+          o.textContent = '🎭 ' + m.name;
+          avatarSel.appendChild(o);
         });
-      }).catch(() => { /* 库加载失败：保持 SVG 形象，静默 */ });
-    }).catch(() => { /* 无 Live2D 模型：保持 SVG 形象 */ });
+        // 恢复上次选择（存于 localStorage），默认 SVG
+        let saved = '';
+        try { saved = localStorage.getItem('nyx_avatar') || ''; } catch (e) {}
+        if (saved === 'svg' || available.some(x => x.id === saved)) {
+          avatarSel.value = saved;
+          currentModel = saved;
+          if (saved !== 'svg') {
+            const target = available.find(x => x.id === saved);
+            if (target) loadL2D(target);
+          }
+        }
+      }
+      avatarSel.addEventListener('change', e => switchAvatar(e.target.value));
+    }).catch(() => {});
   })();
 </script>
 </body>

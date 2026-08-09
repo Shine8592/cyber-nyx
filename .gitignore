@@ -9,10 +9,13 @@ build/
 .env
 config.json
 
-# 训练运行时（自动生成/下载）
+# 训练/部署时自动生成或下载：
 GPT_SoVITS/
 tools/
 train_data/*
 !train_data/train_one.py
 runtime/
 _test_*.log
+
+# Live2D 模型源压缩包（保留本地备份，不入库；需用时解压到 web/assets/live2d/）
+*.zip
