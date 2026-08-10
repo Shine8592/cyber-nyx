@@ -342,8 +342,8 @@ menu.addEventListener('click', e => {
   const act = item.dataset.act;
   menu.style.display = 'none';
   switch(act) {
-    case 'chat': openCard(); break;
-    case 'panel': openPanel(); break;
+    case 'chat': openChatWindow(); break;
+    case 'panel': openChatWindow(); break;
     case 'pin': togglePin(); break;
     case 'hello': hello(); break;
     case 'quit': window.close(); break;
@@ -351,9 +351,22 @@ menu.addEventListener('click', e => {
 });
 
 function hello() {
-  openCard();
+  openChatWindow();
+  // 桌宠也主动打个招呼（有口型动画）
   speak('主人好呀，我一直在哦');
-  addMsg('主人好呀，我一直在哦', 'nyx');
+}
+
+// ---------- 独立对话窗口（pywebview 弹出，大尺寸便于使用）----------
+function openChatWindow() {
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.open_chat().catch(e => { fallbackChat(); });
+  } else {
+    // 非桌宠环境（浏览器预览）：打开新标签页
+    fallbackChat();
+  }
+}
+function fallbackChat() {
+  window.open('/', '_blank');
 }
 
 // ---------- 卡片对话 ----------

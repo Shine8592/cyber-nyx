@@ -1104,14 +1104,18 @@ if __name__ == "__main__":
         print(f"   桌宠模式 · 内部服务 http://127.0.0.1:{port}")
         _run_inner(port)
 
-        # 桌宠窗口 API：供前端页面调用（置顶切换等）
+        # 桌宠窗口 API：供前端页面调用（置顶切换 / 对话窗口控制等）
         class PetApi:
             def __init__(self):
                 self._win = None
+                self._chat_win = None
                 self._on_top = True
 
             def _set_win(self, win):
                 self._win = win
+
+            def _set_chat_win(self, win):
+                self._chat_win = win
 
             def toggle_top(self):
                 """切换窗口置顶状态。"""
@@ -1130,7 +1134,35 @@ if __name__ == "__main__":
                 except Exception as e:
                     return {"ok": False, "error": str(e)}
 
+            def open_chat(self):
+                """弹出独立对话窗口（完整聊天界面）。"""
+                try:
+                    self._chat_win.show()
+                    self._chat_win.restore()
+                    return {"ok": True}
+                except Exception as e:
+                    return {"ok": False, "error": str(e)}
+
+            def hide_chat(self):
+                try:
+                    self._chat_win.hide()
+                    return {"ok": True}
+                except Exception as e:
+                    return {"ok": False, "error": str(e)}
+
         pet_api = PetApi()
+        # 独立对话窗口：初始隐藏，右键"说句话"时弹出（完整 UI，尺寸大便于使用）
+        chat_win = webview.create_window(
+            "Cyber Nyx · 小夜",
+            f"http://127.0.0.1:{port}/",
+            width=1000,
+            height=700,
+            min_size=(800, 560),
+            background_color="#0d0f17",
+            hidden=True,
+        )
+        pet_api._set_chat_win(chat_win)
+
         # 透明悬空桌宠窗口：无边框 + 置顶 + 透明背景 + 可拖拽
         pet_win = webview.create_window(
             "小夜 · 桌宠",
