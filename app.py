@@ -48,13 +48,16 @@ app_settings.load_to_env()
 
 
 def _gui_requested() -> bool:
-    """运行模式判定：默认 GUI 独立窗口；`--web` 强制浏览器模式。
+    """运行模式判定：默认 GUI 独立窗口；`--web` 强制浏览器模式；`--pet` 桌宠模式。
 
     - `--web`：强制浏览器模式（支持局域网访问，需访问令牌）
     - `--gui`：强制 GUI 窗口（兼容旧参数）
+    - `--pet`：桌宠模式（透明悬空小夜，由主入口单独处理，不算 GUI 全窗口）
     - 默认：GUI 窗口（frozen 打包 或 本机装有 pywebview）
     - 本机未装 pywebview 时自动降级为浏览器模式（不崩溃）
     """
+    if "--pet" in sys.argv:
+        return False
     if "--web" in sys.argv:
         return False
     if "--gui" in sys.argv:
@@ -73,7 +76,8 @@ def _gui_requested() -> bool:
 RUN_GUI = _gui_requested()
 
 # --- 鉴权：访问令牌（NYX_AUTH_DISABLE=1 可关闭，测试用） ---
-AUTH_DISABLED = os.environ.get("NYX_AUTH_DISABLE", "0") == "1" or RUN_GUI
+# GUI / 桌宠 窗口模式只监听 127.0.0.1，无需令牌
+AUTH_DISABLED = os.environ.get("NYX_AUTH_DISABLE", "0") == "1" or RUN_GUI or "--pet" in sys.argv
 
 
 def _ensure_auth_token() -> str:
@@ -211,6 +215,12 @@ class ChatIn(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (RES_DIR / "web" / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/pet", response_class=HTMLResponse)
+def pet_page():
+    """桌宠模式页面：透明悬空小夜 + 卡片对话。"""
+    return (RES_DIR / "web" / "pet.html").read_text(encoding="utf-8")
 
 
 # --- 静态资源（头像/音频等） ---
@@ -1049,7 +1059,11 @@ def _looks_important(msg: str) -> bool:
 
 
 if __name__ == "__main__":
+    import socket
+    import threading
+
     import uvicorn
+    import webview
 
     print(
         "🌙 Cyber Nyx v0.9 · "
@@ -1058,25 +1072,23 @@ if __name__ == "__main__":
         f"memory={'universal-agent-memory' if MEM_ENABLED else 'none'}"
     )
 
-    if RUN_GUI:
-        import socket
-        import threading
+    def _free_port() -> int:
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        return port
 
-        import webview
-
-        def _free_port() -> int:
-            s = socket.socket()
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
-            s.close()
-            return port
-
-        port = _free_port()
-        print(f"   内部服务 http://127.0.0.1:{port} （独立窗口模式）")
+    def _run_inner(port: int):
         threading.Thread(
             target=lambda: uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning"),
             daemon=True,
         ).start()
+
+    if RUN_GUI:
+        port = _free_port()
+        print(f"   内部服务 http://127.0.0.1:{port} （独立窗口模式）")
+        _run_inner(port)
         webview.create_window(
             "Cyber Nyx · 小夜",
             f"http://127.0.0.1:{port}/",
@@ -1085,6 +1097,54 @@ if __name__ == "__main__":
             min_size=(920, 640),
             background_color="#0d0f17",
         )
+        webview.start()
+        os._exit(0)
+    elif "--pet" in sys.argv:
+        port = _free_port()
+        print(f"   桌宠模式 · 内部服务 http://127.0.0.1:{port}")
+        _run_inner(port)
+
+        # 桌宠窗口 API：供前端页面调用（置顶切换等）
+        class PetApi:
+            def __init__(self):
+                self._win = None
+                self._on_top = True
+
+            def _set_win(self, win):
+                self._win = win
+
+            def toggle_top(self):
+                """切换窗口置顶状态。"""
+                self._on_top = not self._on_top
+                try:
+                    self._win.on_top = self._on_top
+                    return {"ok": True, "on_top": self._on_top}
+                except Exception as e:
+                    return {"ok": False, "error": str(e)}
+
+            def set_top(self, flag: bool):
+                self._on_top = bool(flag)
+                try:
+                    self._win.on_top = self._on_top
+                    return {"ok": True, "on_top": self._on_top}
+                except Exception as e:
+                    return {"ok": False, "error": str(e)}
+
+        pet_api = PetApi()
+        # 透明悬空桌宠窗口：无边框 + 置顶 + 透明背景 + 可拖拽
+        pet_win = webview.create_window(
+            "小夜 · 桌宠",
+            f"http://127.0.0.1:{port}/pet",
+            width=220,
+            height=280,
+            frameless=True,
+            transparent=True,
+            on_top=True,
+            easy_drag=True,
+            background_color="#000000",
+            js_api=pet_api,
+        )
+        pet_api._set_win(pet_win)
         webview.start()
         os._exit(0)
     else:

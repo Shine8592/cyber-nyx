@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小夜 · 桌宠</title>
+<style>
+  :root {
+    --surface-0: #0f1117;
+    --surface-1: #161a22;
+    --surface-2: #1e2430;
+    --line: rgba(255,255,255,.09);
+    --text-1: #eef1f5;
+    --text-2: #aab2bd;
+    --accent: #e8c56f;
+    --danger: #e5484d;
+    --radius: 10px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    width:100%; height:100%;
+    background: transparent;   /* 关键：透明背景，实现悬空效果 */
+    overflow:hidden;
+    font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    user-select:none;
+  }
+
+  /* ---- 小人区域（可拖拽、可交互） ---- */
+  .pet-stage {
+    position:absolute; inset:0;
+    display:flex; align-items:flex-end; justify-content:center;
+    cursor: grab;
+  }
+  .pet-stage:active { cursor: grabbing; }
+  #petCanvas {
+    width:220px; height:280px;
+    pointer-events: none;   /* 拖拽优先，交互走容器 */
+  }
+  .pet-status {
+    position:absolute; bottom:6px; left:50%; transform:translateX(-50%);
+    font-size:10px; color:rgba(255,255,255,.35);
+    white-space:nowrap; pointer-events:none;
+  }
+
+  /* ---- 右键菜单 ---- */
+  .pet-menu {
+    position:absolute; z-index:100;
+    background: var(--surface-1);
+    border:1px solid var(--line);
+    border-radius: var(--radius);
+    padding:4px;
+    min-width:130px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    display:none;
+  }
+  .pet-menu-item {
+    padding:7px 12px; font-size:12.5px; color:var(--text-1);
+    border-radius:6px; cursor:pointer;
+    display:flex; align-items:center; gap:8px;
+    transition: background .12s;
+  }
+  .pet-menu-item:hover { background:rgba(255,255,255,.07); }
+  .pet-menu-item.danger { color:var(--danger); }
+  .pet-menu-sep { height:1px; background:var(--line); margin:4px 6px; }
+
+  /* ---- 聊天卡片（右键对话） ---- */
+  .pet-card {
+    position:absolute; z-index:90;
+    right:10px; bottom:10px; width:250px;
+    background: var(--surface-1);
+    border:1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(0,0,0,.55);
+    overflow:hidden;
+    display:none;
+    flex-direction:column;
+  }
+  .pet-card-head {
+    padding:8px 12px; font-size:12px; color:var(--text-2);
+    background:var(--surface-2);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .pet-card-head b { color:var(--text-1); font-weight:600; }
+  .pet-card-head .actions { display:flex; gap:8px; }
+  .pet-card-head .actions span {
+    cursor:pointer; font-size:12px; color:var(--text-2); 
+    padding:2px 6px; border-radius:4px;
+  }
+  .pet-card-head .actions span:hover { background:rgba(255,255,255,.08); color:var(--text-1); }
+  .pet-card-body {
+    height:130px; overflow-y:auto; padding:10px; font-size:12.5px;
+    display:flex; flex-direction:column; gap:7px;
+  }
+  .msg { max-width:85%; padding:6px 10px; border-radius:8px; line-height:1.5; word-break:break-word; }
+  .msg.me { align-self:flex-end; background:var(--accent); color:#201a10; }
+  .msg.nyx { align-self:flex-start; background:var(--surface-2); color:var(--text-1); }
+  .msg.sys { align-self:center; color:var(--text-2); font-size:11px; }
+  .pet-card-input {
+    display:flex; gap:6px; padding:8px;
+    border-top:1px solid var(--line);
+  }
+  .pet-card-input input {
+    flex:1; padding:7px 10px; font-size:12.5px;
+    background:var(--surface-2); color:var(--text-1);
+    border:1px solid var(--line); border-radius:8px; outline:none;
+    user-select:text;
+  }
+  .pet-card-input input:focus { border-color:var(--accent); }
+  .pet-card-input button {
+    padding:7px 12px; font-size:12.5px; cursor:pointer;
+    background:var(--accent); color:#201a10; border:none; border-radius:8px;
+  }
+  .pet-card-input button.voice-btn { background:var(--surface-2); color:var(--text-2); }
+  .pet-card-input button.voice-btn.rec { background:var(--danger); color:#fff; }
+
+  /* ---- 完整面板（iframe 嵌入现有 UI） ---- */
+  .pet-panel {
+    position:absolute; inset:0; z-index:110;
+    background:var(--surface-0);
+    display:none;
+  }
+  .pet-panel iframe { width:100%; height:100%; border:none; }
+  .pet-panel .panel-close {
+    position:absolute; top:8px; right:8px; z-index:1;
+    width:28px; height:28px; border-radius:50%;
+    background:rgba(0,0,0,.5); color:#fff; border:none; cursor:pointer;
+    font-size:14px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Live2D 小人 -->
+<div class="pet-stage" id="petStage">
+  <canvas id="petCanvas"></canvas>
+  <div class="pet-status" id="petStatus">小夜</div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="pet-menu" id="petMenu">
+  <div class="pet-menu-item" data-act="chat">💬 说句话</div>
+  <div class="pet-menu-item" data-act="panel">🖥️ 完整面板</div>
+  <div class="pet-menu-sep"></div>
+  <div class="pet-menu-item" data-act="pin">📌 置顶切换</div>
+  <div class="pet-menu-item" data-act="hello">👋 打招呼</div>
+  <div class="pet-menu-sep"></div>
+  <div class="pet-menu-item danger" data-act="quit">✕ 退出小夜</div>
+</div>
+
+<!-- 卡片对话 -->
+<div class="pet-card" id="petCard">
+  <div class="pet-card-head">
+    <b>💬 跟小夜说</b>
+    <div class="actions">
+      <span id="cardPanelBtn" title="完整面板">🖥️</span>
+      <span id="cardCloseBtn" title="关闭">✕</span>
+    </div>
+  </div>
+  <div class="pet-card-body" id="petCardBody">
+    <div class="msg sys" id="petWelcome">夜安，主人。想聊点什么？</div>
+  </div>
+  <div class="pet-card-input">
+    <button class="voice-btn" id="cardVoiceBtn" title="按住说话">🎤</button>
+    <input id="cardInput" placeholder="说点什么…" autocomplete="off">
+    <button id="cardSendBtn">发送</button>
+  </div>
+</div>
+
+<!-- 完整面板 -->
+<div class="pet-panel" id="petPanel">
+  <button class="panel-close" id="panelCloseBtn">✕</button>
+  <iframe id="panelFrame" src=""></iframe>
+</div>
+
+<script>
+// ============ 桌宠逻辑 ============
+const stage = document.getElementById('petStage');
+const canvas = document.getElementById('petCanvas');
+const menu = document.getElementById('petMenu');
+const card = document.getElementById('petCard');
+const cardBody = document.getElementById('petCardBody');
+const cardInput = document.getElementById('cardInput');
+const panel = document.getElementById('petPanel');
+const panelFrame = document.getElementById('panelFrame');
+
+let available = [];
+let l2dEnabled = false;
+let l2dApp = null;
+let sessionId = '';
+
+// ---------- Live2D 加载 ----------
+const loadJs = (src) => new Promise((res, rej) => {
+  const s = document.createElement('script');
+  s.src = src; s.onload = res; s.onerror = rej;
+  document.head.appendChild(s);
+});
+
+function ensureLibs() {
+  return loadJs('/assets/live2d/pixi.min.js')
+    .then(() => loadJs('/assets/live2d/live2dcubismcore.min.js'))
+    .then(() => loadJs('/assets/live2d/cubism4.min.js'))
+    .then(() => true)
+    .catch(() => false);
+}
+
+// 渲染 Live2D 到桌宠窗口
+function renderPet(modelPath) {
+  ensureLibs().then(ok => {
+    if (!ok) { showFallback(); return; }
+    const app = new PIXI.Application({
+      view: canvas, width: 220, height: 280,
+      transparent: true, autoStart: true, antialias: true,
+    });
+    l2dApp = app;
+    const url = '/assets/live2d/' + modelPath;
+    PIXI.live2d.Live2DModel.from(url, { autoInteract: false }).then(m => {
+      app.stage.addChild(m);
+      // 测量原始高度并缩放适配窗口
+      let rawH = 2324;
+      try { m.scale.set(1); const b2 = m.getBounds(); rawH = (b2 && b2.height) || 2324; } catch(e) {}
+      const scale = (280 * 0.92) / rawH;
+      m.scale.set(scale);
+      const fit = () => {
+        let b; try { b = m.getBounds(); } catch(e) { return; }
+        m.x = (220 - b.width) / 2;
+        m.y = (280 - b.height) + 4 - (b.y - m.y);
+      };
+      fit(); setTimeout(fit, 400);
+      // 欢迎动作（若有）
+      setTimeout(() => {
+        try {
+          const groups = m.internalModel.motionManager.defMotionData || {};
+          const gk = Object.keys(groups).filter(k => Object.keys(groups[k]||{}).length);
+          const g = groups[''] ? '' : gk[0];
+          if (g !== undefined) {
+            const ms = Object.keys(groups[g]||{});
+            if (ms.length) m.motion(g, ms[0], 0, 0);
+          }
+        } catch(e) {}
+      }, 1000);
+      // 口型：绑定音频播放
+      window.__nyxLipSync = { enabled: true };
+      const coreM = m.internalModel && m.internalModel.coreModel;
+      const mouthIdx = coreM && coreM._parameterIds ? coreM._parameterIds.indexOf('ParamMouthOpenY') : -1;
+      if (mouthIdx >= 0) {
+        window.__nyxLipSync = {
+          enabled: true,
+          bind: (el) => lipSyncBind(el, coreM, mouthIdx),
+          stop: () => { try { coreM._parameterValues[mouthIdx] = 0; } catch(e){} },
+        };
+      }
+    }).catch(() => showFallback());
+  });
+}
+
+// 音频能量 → 口型
+let lipCtx=null, lipAnalyser=null, lipData=null, lipTimer=null;
+function lipSyncBind(el, coreM, mouthIdx) {
+  try {
+    if (!lipCtx) { lipCtx = new (window.AudioContext||window.webkitAudioContext)(); lipAnalyser = lipCtx.createAnalyser(); lipAnalyser.fftSize=256; lipData=new Uint8Array(lipAnalyser.frequencyBinCount); }
+    if (lipCtx.state === 'suspended') lipCtx.resume();
+    const src = lipCtx.createMediaElementSource(el);
+    src.connect(lipAnalyser);
+    if (lipCtx.state !== 'closed') lipAnalyser.connect(lipCtx.destination);
+    clearInterval(lipTimer);
+    lipTimer = setInterval(() => {
+      lipAnalyser.getByteFrequencyData(lipData);
+      let sum=0, n=Math.min(16,lipData.length);
+      for(let i=0;i<n;i++) sum+=lipData[i];
+      const v=(sum/(n*255));
+      let vv = 0; const t0 = performance.now();
+      // 简单平滑
+      const cur = coreM._parameterValues[mouthIdx] || 0;
+      coreM._parameterValues[mouthIdx] = cur + (v-cur)*0.45;
+    }, 50);
+    setTimeout(() => { clearInterval(lipTimer); lipTimer=null; try{coreM._parameterValues[mouthIdx]=0;}catch(e){} }, (el.duration||1)*1000+400);
+  } catch(e) {}
+}
+
+function showFallback() {
+  // 无模型时的兜底：一个发光圆点
+  document.getElementById('petStatus').textContent = '🌙 小夜';
+}
+
+// ---------- 对话 ----------
+function ensureSession() {
+  if (sessionId) return Promise.resolve(sessionId);
+  return fetch('/api/session/new').then(r=>r.json()).then(d => { sessionId = d.session_id; return sessionId; });
+}
+function addMsg(text, who) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + who;
+  d.textContent = text;
+  cardBody.appendChild(d);
+  cardBody.scrollTop = cardBody.scrollHeight;
+}
+function speak(text) {
+  // TTS 播放（对口型自动绑定）
+  const clean = String(text).replace(/[#*_`>\[\]()]/g,'').slice(0,300);
+  if (!clean) return;
+  fetch('/api/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: clean, voice: ''}) })
+    .then(r => { if(!r.ok) throw new Error('tts'); return r.blob(); })
+    .then(b => {
+      const a = new Audio(URL.createObjectURL(b));
+      a.onplay = () => { if (window.__nyxLipSync && window.__nyxLipSync.bind) window.__nyxLipSync.bind(a); };
+      a.onended = () => { if (window.__nyxLipSync) window.__nyxLipSync.stop(); URL.revokeObjectURL(a.src); };
+      a.play().catch(()=>{});
+    }).catch(()=>{});
+}
+async function sendMsg(text) {
+  if (!text.trim()) return;
+  addMsg(text.trim(), 'me');
+  cardInput.value = '';
+  await ensureSession();
+  try {
+    const r = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message: text.trim(), format:'text', session_id: sessionId}) });
+    const d = await r.json();
+    const reply = d.reply || '唔，我没听清，主人再说一次呀~';
+    addMsg(reply, 'nyx');
+    speak(reply);
+  } catch(e) {
+    addMsg('唔，网络有些不乖呢…', 'nyx');
+  }
+}
+
+// ---------- 右键菜单 ----------
+stage.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  // 菜单位置不超过窗口
+  const mw = menu.offsetWidth || 130, mh = 190;
+  const x = Math.min(e.clientX, 220 - mw);
+  const y = Math.min(e.clientY, 280 - mh);
+  menu.style.left = x + 'px'; menu.style.top = y + 'px';
+  menu.style.display = 'block';
+});
+document.addEventListener('click', e => {
+  if (!menu.contains(e.target)) menu.style.display = 'none';
+});
+menu.addEventListener('click', e => {
+  const item = e.target.closest('.pet-menu-item');
+  if (!item) return;
+  const act = item.dataset.act;
+  menu.style.display = 'none';
+  switch(act) {
+    case 'chat': openCard(); break;
+    case 'panel': openPanel(); break;
+    case 'pin': togglePin(); break;
+    case 'hello': hello(); break;
+    case 'quit': window.close(); break;
+  }
+});
+
+function hello() {
+  openCard();
+  speak('主人好呀，我一直在哦');
+  addMsg('主人好呀，我一直在哦', 'nyx');
+}
+
+// ---------- 卡片对话 ----------
+function openCard() {
+  card.style.display = 'flex';
+  setTimeout(() => cardInput.focus(), 50);
+}
+function closeCard() { card.style.display = 'none'; }
+document.getElementById('cardCloseBtn').onclick = closeCard;
+document.getElementById('cardSendBtn').onclick = () => sendMsg(cardInput.value);
+cardInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(cardInput.value); });
+
+// ---------- 完整面板 ----------
+function openPanel() {
+  panelFrame.src = '/';
+  panel.style.display = 'block';
+}
+document.getElementById('panelCloseBtn').onclick = () => { panel.style.display='none'; panelFrame.src=''; };
+document.getElementById('cardPanelBtn').onclick = openPanel;
+
+// ---------- 置顶切换 ----------
+function togglePin() {
+  // 通过 pywebview API 切换（由桌宠宿主注入）
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.toggle_top().then(() => {
+      document.getElementById('petStatus').textContent = '置顶已切换';
+      setTimeout(()=> document.getElementById('petStatus').textContent='小夜', 1200);
+    });
+  } else {
+    document.getElementById('petStatus').textContent = '置顶需桌宠模式';
+  }
+}
+
+// ---------- 语音输入（STT）----------
+const voiceBtn = document.getElementById('cardVoiceBtn');
+let mediaRec=null, recChunks=[], recStream=null;
+voiceBtn.addEventListener('mousedown', startRec);
+voiceBtn.addEventListener('mouseup', stopRec);
+voiceBtn.addEventListener('mouseleave', stopRec);
+function startRec(e) {
+  e.preventDefault();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream => {
+    recStream = stream; recChunks=[];
+    mediaRec = new MediaRecorder(stream);
+    mediaRec.ondataavailable = ev => { if (ev.data && ev.data.size) recChunks.push(ev.data); };
+    mediaRec.onstop = () => {
+      voiceBtn.classList.remove('rec');
+      stream.getTracks().forEach(t=>t.stop());
+      if (!recChunks.length) return;
+      const blob = new Blob(recChunks, {type: mediaRec.mimeType||'audio/webm'});
+      recognizeBlob(blob);
+    };
+    mediaRec.start();
+    voiceBtn.classList.add('rec');
+  }).catch(()=>{});
+}
+function stopRec() {
+  if (mediaRec && mediaRec.state === 'recording') mediaRec.stop();
+}
+async function recognizeBlob(blob) {
+  try {
+    const ac = new (window.AudioContext||window.webkitAudioContext)();
+    const ab = await blob.arrayBuffer();
+    const audio = await ac.decodeAudioData(ab);
+    const src = audio.getChannelData(0);
+    const ratio = audio.sampleRate / 16000;
+    const n = Math.floor(src.length / ratio);
+    const out = new Float32Array(n);
+    for (let i=0;i<n;i++) out[i] = src[Math.floor(i*ratio)];
+    const wav = pcmToWav(out);
+    const r = await fetch('/api/stt', {method:'POST', body: wav});
+    const d = await r.json();
+    if (d.text) { cardInput.value = d.text; cardInput.focus(); }
+    else addMsg('没听清呢…', 'sys');
+  } catch(e) { addMsg('语音识别失败', 'sys'); }
+}
+function pcmToWav(samples) {
+  const buf = new ArrayBuffer(44 + samples.length*2);
+  const dv = new DataView(buf);
+  const ws = (o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
+  ws(0,'RIFF'); dv.setUint32(4,36+samples.length*2,true); ws(8,'WAVE');
+  ws(12,'fmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+  dv.setUint32(24,16000,true); dv.setUint32(28,16000*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true);
+  ws(36,'data'); dv.setUint32(40,samples.length*2,true);
+  for (let i=0;i<samples.length;i++) { const s=Math.max(-1,Math.min(1,samples[i])); dv.setInt16(44+i*2, s<0?s*0x8000:s*0x7FFF, true); }
+  return new Blob([buf], {type:'audio/wav'});
+}
+
+// ---------- 初始化 ----------
+function init() {
+  // 加载模型列表，选第一个可用的 Live2D
+  fetch('/api/avatar/live2d').then(r=>r.json()).then(d => {
+    available = d.models || [];
+    if (available.length) {
+      // 优先选 kei（对口型好）否则第一个
+      const pref = available.find(m => m.id.includes('kei')) || available[0];
+      renderPet(pref.path);
+    } else {
+      showFallback();
+    }
+  }).catch(()=>showFallback());
+  // 欢迎语
+  setTimeout(() => speak('小夜来陪你啦'), 1200);
+}
+init();
+</script>
+</body>
+</html>
