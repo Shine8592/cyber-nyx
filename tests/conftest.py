@@ -12,6 +12,8 @@ sys.path.insert(0, str(ROOT))
 
 # 必须在 import app 之前设置：app.py 在 import 时读取鉴权开关并可能生成 token
 os.environ["NYX_AUTH_DISABLE"] = "1"
+# 测试环境关闭限流（测试客户端同一 IP 会频繁打接口）
+os.environ["NYX_RATE_LIMIT_DISABLE"] = "1"
 
 
 @pytest.fixture(autouse=True)

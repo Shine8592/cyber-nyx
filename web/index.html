@@ -1522,15 +1522,12 @@
     const localPixi = '/assets/live2d/pixi.min.js';
     const localCore = '/assets/live2d/live2dcubismcore.min.js';
     const localAdapter = '/assets/live2d/cubism4.min.js';
-    const cdnPixi = 'https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js';
-    const cdnCore = 'https://cdn.jsdelivr.net/npm/live2dcubismcore@1.0.0/live2dcubismcore.min.js';
-    const cdnAdapter = 'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js';
 
     function ensureLibs() {
       if (libsReady) return Promise.resolve(true);
-      return loadJs(localPixi).catch(() => loadJs(cdnPixi))
-        .then(() => loadJs(localCore).catch(() => loadJs(cdnCore)))
-        .then(() => loadJs(localAdapter).catch(() => loadJs(cdnAdapter)))
+      return loadJs(localPixi)
+        .then(() => loadJs(localCore))
+        .then(() => loadJs(localAdapter))
         .then(() => { libsReady = true; return true; })
         .catch(() => { libsReady = false; return false; });
     }

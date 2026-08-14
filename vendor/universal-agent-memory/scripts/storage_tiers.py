@@ -321,7 +321,7 @@ class ColdStorage:
             'size': len(compressed),
             'archived_at': datetime.now().isoformat(),
             'metadata': metadata or {},
-            'checksum': hashlib.md5(compressed).hexdigest()
+            'checksum': hashlib.md5(compressed, usedforsecurity=False).hexdigest()
         }
         self._save_manifest()
         self.stats['archives'] += 1
@@ -344,7 +344,7 @@ class ColdStorage:
                 compressed = f.read()
             
             # 验证完整性
-            if hashlib.md5(compressed).hexdigest() != archive_info['checksum']:
+            if hashlib.md5(compressed, usedforsecurity=False).hexdigest() != archive_info['checksum']:
                 print(f"⚠️ 校验失败: {key}")
                 return None
             

@@ -204,7 +204,7 @@ class ShortTermMemory:
         if dup_id:
             return dup_id
 
-        item_id = hashlib.md5(f"{time.time()}_{safe}".encode()).hexdigest()[:12]
+        item_id = hashlib.md5(f"{time.time()}_{safe}".encode(), usedforsecurity=False).hexdigest()[:12]
 
         item = {
             "id": item_id,

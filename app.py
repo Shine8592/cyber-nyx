@@ -11,6 +11,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import secrets
 import sys
@@ -35,6 +36,11 @@ from session import SessionManager
 
 import hermes_setup
 import stt
+
+logger = logging.getLogger("cybernyx")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 
 if getattr(sys, "frozen", False):
     BASE = Path(sys.executable).resolve().parent
@@ -185,9 +191,33 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Cyber Nyx", version="0.9.0", lifespan=lifespan)
 
 
+# --- 简单内存限流（防接口被刷：聊天/语音等消耗资源的接口） ---
+# 设置 NYX_RATE_LIMIT_DISABLE=1 可关闭（测试环境用）
+_RATE_DISABLED = os.environ.get("NYX_RATE_LIMIT_DISABLE", "0") == "1"
+_RATE_WINDOW = 60          # 窗口：60 秒
+_RATE_MAX = 20             # 窗口内最多 20 次
+_RATE_HITS: dict[str, list[float]] = {}
+_RATE_PATHS = ("/api/chat", "/api/tts", "/api/clone")
+
+
+def _rate_limited(ip: str, path: str) -> bool:
+    if _RATE_DISABLED:
+        return False
+    key = f"{ip}|{path}"
+    now = time.time()
+    hits = [t for t in _RATE_HITS.get(key, []) if now - t < _RATE_WINDOW]
+    hits.append(now)
+    _RATE_HITS[key] = hits
+    return len(hits) > _RATE_MAX
+
+
 @app.middleware("http")
 async def auth_middleware(request, call_next):
     """鉴权：/api/* 需要 Authorization: Bearer <token>（除 /api/settings 外统一保护）。"""
+    if request.url.path.startswith(_RATE_PATHS):
+        ip = request.client.host if request.client else "unknown"
+        if _rate_limited(ip, request.url.path):
+            return JSONResponse({"detail": "too many requests"}, status_code=429)
     if not AUTH_DISABLED and request.url.path.startswith("/api/"):
         auth = request.headers.get("authorization", "")
         if auth.startswith("Bearer "):
@@ -546,8 +576,8 @@ def chat(body: ChatIn):
     if _looks_important(msg) and MEM_ENABLED:
         try:
             memory.remember(f"主人说：{msg}", "from-chat")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("记忆保存失败: %s", e)
 
     fmt = body.format or "text"
     if fmt == "json":
@@ -681,8 +711,8 @@ def chat_stream(body: ChatIn):
         if _looks_important(msg) and MEM_ENABLED:
             try:
                 memory.remember(f"主人说：{msg}", "from-chat")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("记忆保存失败: %s", e)
 
         yield (
             "data: "
@@ -756,8 +786,8 @@ def _scan_clone_profiles():
         if txt.exists():
             try:
                 prompt_text = txt.read_text(encoding="utf-8").strip()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("读取克隆文案失败 %s: %s", txt, e)
         CLONE_PROFILES[f.stem] = {"audio": str(f), "prompt_text": prompt_text}
 
 
@@ -921,15 +951,15 @@ async def clone_voice_delete(name: str = ""):
         if audio and os.path.exists(audio):
             try:
                 os.remove(audio)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("删除克隆音频失败 %s: %s", audio, e)
         base = os.path.splitext(audio)[0] if audio else str(CLONE_DIR / name)
         txt = base + ".txt"
         if os.path.exists(txt):
             try:
                 os.remove(txt)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("删除克隆文案失败 %s: %s", txt, e)
         return {"ok": True, "deleted": name}
     return {"ok": False, "error": "音色不存在"}
 
@@ -1180,5 +1210,8 @@ if __name__ == "__main__":
         webview.start()
         os._exit(0)
     else:
-        print("   访问 http://127.0.0.1:8000")
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        # 安全修复：鉴权关闭（GUI/桌宠模式）时只监听本机回环地址，
+        # 避免局域网内任何人无鉴权访问 /api/*
+        host = "127.0.0.1" if AUTH_DISABLED else "0.0.0.0"
+        print(f"   访问 http://127.0.0.1:8000 (监听 {host})")
+        uvicorn.run(app, host=host, port=8000)

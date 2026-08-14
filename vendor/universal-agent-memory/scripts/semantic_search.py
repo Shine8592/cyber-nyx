@@ -186,7 +186,7 @@ class SemanticMemorySearch:
             metadata.append({
                 **chunk,
                 "embedding_index": i,
-                "hash": hashlib.md5(chunk["text"].encode()).hexdigest()[:12]
+                "hash": hashlib.md5(chunk["text"].encode(), usedforsecurity=False).hexdigest()[:12]
             })
         
         with open(METADATA_PATH, 'w', encoding='utf-8') as f:
